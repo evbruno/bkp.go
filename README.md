@@ -4,7 +4,8 @@ A small Go CLI that reads a YAML backup spec, runs a backup command per
 project (optionally gzipping the source first), optionally backs up its own
 orchestrator database, and logs every backup call to a single SQLite table.
 
-See [PLAN.md](PLAN.md) for the full design.
+See [PLAN.md](PLAN.md) for the full design and [CHANGELOG.md](CHANGELOG.md)
+for release history.
 
 ## Install
 
@@ -46,14 +47,26 @@ so cross-compilation only needs `GOOS`/`GOARCH` — no C toolchain required.
 
 ## Releasing
 
-Pushing a `vX.Y.Z` tag triggers [.github/workflows/release.yml](.github/workflows/release.yml),
-which cross-compiles `linux/amd64`, `linux/arm64`, and `darwin/arm64`, and
-publishes them as tarballs (plus a `checksums.txt`) on a new GitHub release:
+Before tagging, move the relevant [CHANGELOG.md](CHANGELOG.md) entries out
+of `## [Unreleased]` into a new `## [X.Y.Z] - YYYY-MM-DD` section (version
+number without the `v` prefix, matching the tag). The release workflow
+extracts that section and uses it as the GitHub release's body.
+
+Then tag and push:
 
 ```sh
-git tag v0.0.3
-git push origin v0.0.3
+git tag v0.0.4
+git push origin v0.0.4
 ```
+
+Pushing a `vX.Y.Z` tag triggers [.github/workflows/release.yml](.github/workflows/release.yml),
+which cross-compiles `linux/amd64`, `linux/arm64`, and `darwin/arm64`,
+publishes them as tarballs (plus a `checksums.txt`), and sets the release
+body from that version's `CHANGELOG.md` section (GitHub's auto-generated
+notes are appended below it — a "Full Changelog" compare link, mainly
+useful since this repo doesn't use PRs). If no matching section is found,
+the workflow logs a warning but still publishes the release with just the
+auto-generated notes.
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs `go vet`, `go
 test`, and `make release` on every push/PR to `main`, so a broken

@@ -21,10 +21,26 @@ jobs:
       - name: Build release binaries
         run: make VERSION=${{ github.ref_name }} release
 
+      - name: Extract changelog section for this version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            /^## \[/ {
+              if (capture) exit
+              if (index($0, "[" ver "]") > 0) { capture=1; next }
+              next
+            }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "warning: no CHANGELOG.md section found for [$version]" >&2
+          fi
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*.tar.gz
             dist/checksums.txt
+          body_path: release-notes.md
           generate_release_notes: true
