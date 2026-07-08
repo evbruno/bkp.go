@@ -6,15 +6,49 @@ orchestrator database, and logs every backup call to a single SQLite table.
 
 See [PLAN.md](PLAN.md) for the full design.
 
-## Build
+## Install
+
+Download a prebuilt binary from the [releases page](https://github.com/evbruno/bkp.go/releases)
+(`linux/amd64` and `linux/arm64`):
+
+```sh
+curl -fsSL -o bkp.tar.gz \
+  https://github.com/evbruno/bkp.go/releases/latest/download/bkp-linux-amd64.tar.gz
+tar -xzf bkp.tar.gz
+sudo mv bkp-linux-amd64 /usr/local/bin/bkp
+```
+
+Swap `amd64` for `arm64` on ARM hosts (Graviton, Ampere, Raspberry Pi, etc).
+
+## Build from source
 
 Requires Go 1.26+.
 
 ```sh
-make build      # builds ./bin/bkp
+make build      # builds ./bin/bkp for the current platform
 make test       # runs the test suite
 make run        # builds, then runs against examples/demo/config.yaml
+make release    # cross-compiles linux/amd64 + linux/arm64 into ./dist/*.tar.gz
 ```
+
+`bkp --version` reports the build's version, embedded via `-ldflags -X
+main.version=...`. The binaries are pure Go (`modernc.org/sqlite`, no CGO),
+so cross-compilation only needs `GOOS`/`GOARCH` — no C toolchain required.
+
+## Releasing
+
+Pushing a `vX.Y.Z` tag triggers [.github/workflows/release.yml](.github/workflows/release.yml),
+which cross-compiles `linux/amd64` and `linux/arm64` and publishes them as
+tarballs on a new GitHub release:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs `go vet`, `go
+test`, and `make release` on every push/PR to `main`, so a broken
+cross-compile is caught before it's tagged.
 
 ## Usage
 

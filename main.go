@@ -12,10 +12,19 @@ import (
 	"github.com/evbruno/bkp.go/internal/store"
 )
 
+// version is set at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	configPath := flag.String("config", "", "path to backup spec YAML (required)")
 	dryRun := flag.Bool("dry-run", false, "validate config and report what would run, without executing anything")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	if *configPath == "" {
 		fmt.Fprintln(os.Stderr, "error: --config is required")

@@ -1,4 +1,5 @@
 /bin/
+/dist/
 examples/demo/orchestrator.sqlite3
 examples/demo/dbs/*.gz
 examples/demo/remote/*
