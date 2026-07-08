@@ -380,3 +380,88 @@ func TestRun_DoesNotSkipBasedOnFailedRun(t *testing.T) {
 		t.Errorf("second run status = %q, want ok (a prior error shouldn't count as \"unchanged\")", results[0].Status)
 	}
 }
+
+func TestRun_ResultIncludesFileNameAndSHA1(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	cfg := &config.Config{
+		Title:       "test",
+		Target:      filepath.Join(dir, "orchestrator.sqlite3"),
+		SelfCommand: "true",
+		Projects: []config.Project{
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "true"},
+		},
+	}
+
+	st := newTestStore(t)
+
+	// First run: "ok", should carry the file name and a real sha1.
+	results := Run(cfg, st, Options{})
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2 (project + orchestrator)", len(results))
+	}
+	project, orchestrator := results[0], results[1]
+
+	if project.Status != "ok" {
+		t.Fatalf("project status = %q, want ok (error=%s)", project.Status, project.Error)
+	}
+	if project.FileName != "app.db" {
+		t.Errorf("project.FileName = %q, want %q", project.FileName, "app.db")
+	}
+	if len(project.SHA1) != 40 {
+		t.Errorf("project.SHA1 = %q, want a 40-char hex sha1", project.SHA1)
+	}
+
+	if orchestrator.Status != "ok" {
+		t.Fatalf("orchestrator status = %q, want ok (error=%s)", orchestrator.Status, orchestrator.Error)
+	}
+	if orchestrator.FileName != "orchestrator.sqlite3" {
+		t.Errorf("orchestrator.FileName = %q, want %q", orchestrator.FileName, "orchestrator.sqlite3")
+	}
+	if orchestrator.SHA1 != "" {
+		t.Errorf("orchestrator.SHA1 = %q, want empty (no hash computed for the self-backup)", orchestrator.SHA1)
+	}
+
+	// Second run: "skipped", should still report the file name and the same sha1.
+	skipped := Run(cfg, st, Options{})[0]
+	if skipped.Status != "skipped" {
+		t.Fatalf("second run status = %q, want skipped", skipped.Status)
+	}
+	if skipped.FileName != "app.db" {
+		t.Errorf("skipped.FileName = %q, want %q", skipped.FileName, "app.db")
+	}
+	if skipped.SHA1 != project.SHA1 {
+		t.Errorf("skipped.SHA1 = %q, want %q (same content as the first run)", skipped.SHA1, project.SHA1)
+	}
+
+	// dry-run: file name is known up front, but no hash is computed.
+	dryRun := Run(cfg, st, Options{DryRun: true})[0]
+	if dryRun.Status != "dry-run" {
+		t.Fatalf("dry-run status = %q, want dry-run", dryRun.Status)
+	}
+	if dryRun.FileName != "app.db" {
+		t.Errorf("dryRun.FileName = %q, want %q", dryRun.FileName, "app.db")
+	}
+	if dryRun.SHA1 != "" {
+		t.Errorf("dryRun.SHA1 = %q, want empty (dry-run never hashes)", dryRun.SHA1)
+	}
+
+	// error: hashing still happens before the command runs, so it's reported too.
+	cfg.Projects[0].Command = "false"
+	cfg.Projects[0].SkipUnchanged = boolPtr(false)
+	errored := Run(cfg, st, Options{})[0]
+	if errored.Status != "error" {
+		t.Fatalf("errored run status = %q, want error", errored.Status)
+	}
+	if errored.FileName != "app.db" {
+		t.Errorf("errored.FileName = %q, want %q", errored.FileName, "app.db")
+	}
+	if len(errored.SHA1) != 40 {
+		t.Errorf("errored.SHA1 = %q, want a 40-char hex sha1", errored.SHA1)
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }

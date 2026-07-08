@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -99,19 +98,32 @@ func runStatus(args []string) {
 
 func printSummary(title string, results []runner.Result) bool {
 	fmt.Printf("Backup summary: %s\n", title)
-	fmt.Println(strings.Repeat("-", 70))
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(w, "PROJECT\tFILE\tSHA1\tSTATUS\tDURATION\tERROR")
 
 	failed := false
 	for _, r := range results {
-		line := fmt.Sprintf("%-30s %-8s %8s", r.Project, r.Status, r.Duration.Round(time.Millisecond))
 		if r.Status == "error" {
 			failed = true
-			line += fmt.Sprintf("  error=%s", r.Error)
 		}
-		fmt.Println(line)
+
+		sha1 := r.SHA1
+		if sha1 == "" {
+			sha1 = "-"
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.Project,
+			r.FileName,
+			sha1,
+			r.Status,
+			r.Duration.Round(time.Millisecond),
+			r.Error,
+		)
 	}
 
-	fmt.Println(strings.Repeat("-", 70))
+	w.Flush()
 	return failed
 }
 

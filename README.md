@@ -83,9 +83,9 @@ bkp status --config path/to/spec.yaml
 
 ```
 PROJECT       LAST RUN (UTC)       STATUS   SIZE   GZ SIZE  DURATION  ERROR
-app-one       2026-07-08 22:40:25  ok       43     67       7ms
-app-two       2026-07-08 22:40:25  skipped  32     -        0s
-orchestrator  2026-07-08 22:40:25  ok       12288  -        0s
+app-one       2026-07-08 22:47:12  ok       43     67       7ms
+app-two       2026-07-08 22:47:12  skipped  32     -        0s
+orchestrator  2026-07-08 22:47:12  ok       12288  -        0s
 ```
 
 ## Config format
@@ -175,15 +175,17 @@ projects:
     compress: false
 ```
 
-First run's output:
+First run's output — note the `FILE`/`SHA1` columns, which are always the
+*uncompressed* source, even when `compress: true` (app-one's gz artifact is
+`production1.sqlite3.<timestamp>.gz`, but its sha1 is of the plain
+`production1.sqlite3`):
 
 ```
 Backup summary: Demo backup
-----------------------------------------------------------------------
-app-one                        ok            9ms
-app-two                        ok            7ms
-orchestrator                   ok            7ms
-----------------------------------------------------------------------
+PROJECT       FILE                  SHA1                                      STATUS  DURATION  ERROR
+app-one       production1.sqlite3   4b501c61148e0cf7da293fd1a546561dc22c323b  ok      11ms
+app-two       production2.sqlite3   716d22c5713091892cc87ef128e323de99ddba60  ok      8ms
+orchestrator  orchestrator.sqlite3  -                                         ok      7ms
 ```
 
 `examples/demo/remote/` now contains something like
@@ -191,36 +193,38 @@ orchestrator                   ok            7ms
 `compress` and `timestamp` at their defaults of `true` — the timestamp
 suffix will differ on your run), `production2.sqlite3` (uncompressed, since
 `app-two` set `compress: false`), and a copy of the orchestrator DB itself.
+The orchestrator's own row has no sha1: it's not sha1'd or subject to
+`skip_unchanged` — `backup_log` gets a new row on every single invocation
+(even a skip is a row), so the tracking DB never has "unchanged" content to
+detect, and skipping the one backup meant to preserve that history would
+defeat its purpose.
 
 Since the demo's fixture files never change, running `make run` again
-**skips** both projects (`skip_unchanged` also defaults to `true`) — the
-orchestrator itself still runs every time, since it has no compress/hash
-step of its own:
+**skips** both projects (`skip_unchanged` also defaults to `true`, and the
+sha1 matches) — the orchestrator itself still runs every time:
 
 ```
 Backup summary: Demo backup
-----------------------------------------------------------------------
-app-one                        skipped        0s
-app-two                        skipped        0s
-orchestrator                   ok            8ms
-----------------------------------------------------------------------
+PROJECT       FILE                  SHA1                                      STATUS   DURATION  ERROR
+app-one       production1.sqlite3   4b501c61148e0cf7da293fd1a546561dc22c323b  skipped  0s
+app-two       production2.sqlite3   716d22c5713091892cc87ef128e323de99ddba60  skipped  0s
+orchestrator  orchestrator.sqlite3  -                                         ok       6ms
 ```
 
 Touching `examples/demo/dbs/production1.sqlite3` (changing its sha1) makes
-`app-one` run again — and only `app-one`, since `app-two`'s file is still
-unchanged:
+`app-one` run again — and only `app-one`, since `app-two`'s file (and sha1)
+is still unchanged:
 
 ```
 Backup summary: Demo backup
-----------------------------------------------------------------------
-app-one                        ok            7ms
-app-two                        skipped        0s
-orchestrator                   ok            8ms
-----------------------------------------------------------------------
+PROJECT       FILE                  SHA1                                      STATUS   DURATION  ERROR
+app-one       production1.sqlite3   bae30e81ca6ede5aba9ae620d69dee2fe761779c  ok       8ms
+app-two       production2.sqlite3   716d22c5713091892cc87ef128e323de99ddba60  skipped  0s
+orchestrator  orchestrator.sqlite3  -                                         ok       6ms
 ```
 
 Every call — including skips — is logged to `orchestrator.sqlite3` in the
-`backup_log` table:
+`backup_log` table (the `sha1` column mirrors what's in the summary above):
 
 ```sh
 sqlite3 examples/demo/orchestrator.sqlite3 \
@@ -228,16 +232,20 @@ sqlite3 examples/demo/orchestrator.sqlite3 \
 ```
 
 ```
-app-one|examples/demo/dbs/production1.sqlite3|32|56|ok|9
-app-two|examples/demo/dbs/production2.sqlite3|32||ok|6
+app-one|examples/demo/dbs/production1.sqlite3|32|56|ok|11
+app-two|examples/demo/dbs/production2.sqlite3|32||ok|7
 orchestrator|examples/demo/orchestrator.sqlite3|12288||ok|0
 app-one|examples/demo/dbs/production1.sqlite3|32||skipped|0
+app-two|examples/demo/dbs/production2.sqlite3|32||skipped|0
+orchestrator|examples/demo/orchestrator.sqlite3|12288||ok|0
+app-one|examples/demo/dbs/production1.sqlite3|43|67|ok|7
 app-two|examples/demo/dbs/production2.sqlite3|32||skipped|0
 orchestrator|examples/demo/orchestrator.sqlite3|12288||ok|0
 ```
 
 Run the same config with `--dry-run` to see what would happen without
-touching the filesystem or the log:
+touching the filesystem or the log (no sha1 is computed, since dry-run reads
+nothing beyond `stat`):
 
 ```sh
 ./bin/bkp --config examples/demo/config.yaml --dry-run
@@ -245,11 +253,10 @@ touching the filesystem or the log:
 
 ```
 Backup summary: Demo backup
-----------------------------------------------------------------------
-app-one                        dry-run        0s
-app-two                        dry-run        0s
-orchestrator                   dry-run        0s
-----------------------------------------------------------------------
+PROJECT       FILE                  SHA1  STATUS   DURATION  ERROR
+app-one       production1.sqlite3   -     dry-run  0s
+app-two       production2.sqlite3   -     dry-run  0s
+orchestrator  orchestrator.sqlite3  -     dry-run  0s
 ```
 
 `examples/demo/orchestrator.sqlite3` and everything under

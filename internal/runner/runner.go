@@ -20,7 +20,9 @@ import (
 // Result is the outcome of a single project (or the orchestrator self-backup).
 type Result struct {
 	Project  string
-	Status   string // "ok" | "error" | "dry-run"
+	FileName string // base name of the source file, e.g. "production1.sqlite3"
+	SHA1     string // sha1 of the uncompressed source file; empty if never computed (dry-run, stat failure, orchestrator)
+	Status   string // "ok" | "error" | "dry-run" | "skipped"
 	Error    string
 	Duration time.Duration
 }
@@ -64,7 +66,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 			DurationMs:     duration.Milliseconds(),
 			SHA1:           sha1sum,
 		})
-		return Result{Project: p.Name, Status: "error", Error: err.Error(), Duration: duration}
+		return Result{Project: p.Name, FileName: p.File, SHA1: sha1sum, Status: "error", Error: err.Error(), Duration: duration}
 	}
 
 	info, err := os.Stat(sourcePath)
@@ -74,7 +76,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 	fileSize := info.Size()
 
 	if opts.DryRun {
-		return Result{Project: p.Name, Status: "dry-run", Duration: time.Since(start)}
+		return Result{Project: p.Name, FileName: p.File, Status: "dry-run", Duration: time.Since(start)}
 	}
 
 	sha1sum, err := sha1File(sourcePath)
@@ -98,9 +100,9 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 				DurationMs: duration.Milliseconds(),
 				SHA1:       sha1sum,
 			}); err != nil {
-				return Result{Project: p.Name, Status: "error", Error: err.Error(), Duration: duration}
+				return Result{Project: p.Name, FileName: p.File, SHA1: sha1sum, Status: "error", Error: err.Error(), Duration: duration}
 			}
-			return Result{Project: p.Name, Status: "skipped", Duration: duration}
+			return Result{Project: p.Name, FileName: p.File, SHA1: sha1sum, Status: "skipped", Duration: duration}
 		}
 	}
 
@@ -138,18 +140,19 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 		DurationMs:     duration.Milliseconds(),
 		SHA1:           sha1sum,
 	}); err != nil {
-		return Result{Project: p.Name, Status: "error", Error: err.Error(), Duration: duration}
+		return Result{Project: p.Name, FileName: p.File, SHA1: sha1sum, Status: "error", Error: err.Error(), Duration: duration}
 	}
 
-	return Result{Project: p.Name, Status: "ok", Duration: duration}
+	return Result{Project: p.Name, FileName: p.File, SHA1: sha1sum, Status: "ok", Duration: duration}
 }
 
 func runSelf(cfg *config.Config, st *store.Store, opts Options) Result {
 	const project = "orchestrator"
 	start := time.Now()
+	fileName := filepath.Base(cfg.Target)
 
 	if opts.DryRun {
-		return Result{Project: project, Status: "dry-run", Duration: time.Since(start)}
+		return Result{Project: project, FileName: fileName, Status: "dry-run", Duration: time.Since(start)}
 	}
 
 	var fileSize int64
@@ -166,15 +169,15 @@ func runSelf(cfg *config.Config, st *store.Store, opts Options) Result {
 		FileSize:  fileSize,
 		Status:    "ok",
 	}); err != nil {
-		return Result{Project: project, Status: "error", Error: err.Error(), Duration: time.Since(start)}
+		return Result{Project: project, FileName: fileName, Status: "error", Error: err.Error(), Duration: time.Since(start)}
 	}
 
 	targetDir := filepath.Dir(cfg.Target)
 	if err := runShell(cfg.SelfCommand, targetDir); err != nil {
-		return Result{Project: project, Status: "error", Error: err.Error(), Duration: time.Since(start)}
+		return Result{Project: project, FileName: fileName, Status: "error", Error: err.Error(), Duration: time.Since(start)}
 	}
 
-	return Result{Project: project, Status: "ok", Duration: time.Since(start)}
+	return Result{Project: project, FileName: fileName, Status: "ok", Duration: time.Since(start)}
 }
 
 // isoTimestamp formats t as basic-format ISO 8601 UTC (e.g. 20260708T195149Z)
