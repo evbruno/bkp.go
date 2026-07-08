@@ -36,7 +36,7 @@ clean:
 # on a tag push.
 release:
 	mkdir -p $(DIST_DIR)
-	for platform in linux/amd64 linux/arm64; do \
+	for platform in linux/amd64 linux/arm64 darwin/arm64; do \
 		os=$${platform%/*}; arch=$${platform#*/}; \
 		out=$(BINARY)-$$os-$$arch; \
 		echo "building $$out ($(VERSION))"; \

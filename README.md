@@ -9,7 +9,7 @@ See [PLAN.md](PLAN.md) for the full design.
 ## Install
 
 Download a prebuilt binary from the [releases page](https://github.com/evbruno/bkp.go/releases)
-(`linux/amd64` and `linux/arm64`):
+(`linux/amd64`, `linux/arm64`, `darwin/arm64`):
 
 ```sh
 curl -fsSL -o bkp.tar.gz \
@@ -37,7 +37,7 @@ Requires Go 1.26+.
 make build      # builds ./bin/bkp for the current platform
 make test       # runs the test suite
 make run        # builds, then runs against examples/demo/config.yaml
-make release    # cross-compiles linux/amd64 + linux/arm64 into ./dist/*.tar.gz
+make release    # cross-compiles linux/amd64, linux/arm64, darwin/arm64 into ./dist/*.tar.gz
 ```
 
 `bkp --version` reports the build's version, embedded via `-ldflags -X
@@ -47,12 +47,12 @@ so cross-compilation only needs `GOOS`/`GOARCH` — no C toolchain required.
 ## Releasing
 
 Pushing a `vX.Y.Z` tag triggers [.github/workflows/release.yml](.github/workflows/release.yml),
-which cross-compiles `linux/amd64` and `linux/arm64` and publishes them as
-tarballs on a new GitHub release:
+which cross-compiles `linux/amd64`, `linux/arm64`, and `darwin/arm64`, and
+publishes them as tarballs (plus a `checksums.txt`) on a new GitHub release:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.0.3
+git push origin v0.0.3
 ```
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs `go vet`, `go
