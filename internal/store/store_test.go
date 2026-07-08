@@ -140,3 +140,105 @@ func TestLatestPerProject(t *testing.T) {
 		t.Errorf("rows[1] = %+v, want app2/ok", rows[1])
 	}
 }
+
+func TestInsertLog_SHA1RoundTrip(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.InsertLog(LogRow{
+		Timestamp: time.Now(),
+		Project:   "app1",
+		FilePath:  "/tmp/app1.db",
+		Status:    "ok",
+		SHA1:      "deadbeef",
+	}); err != nil {
+		t.Fatalf("InsertLog returned error: %v", err)
+	}
+
+	var sha1 string
+	err := s.db.QueryRow(`SELECT sha1 FROM backup_log WHERE id = 1`).Scan(&sha1)
+	if err != nil {
+		t.Fatalf("querying inserted row: %v", err)
+	}
+	if sha1 != "deadbeef" {
+		t.Errorf("sha1 = %q, want %q", sha1, "deadbeef")
+	}
+}
+
+func TestLatestOKSHA1(t *testing.T) {
+	s := openTestStore(t)
+
+	if _, found, err := s.LatestOKSHA1("app1"); err != nil {
+		t.Fatalf("LatestOKSHA1 returned error: %v", err)
+	} else if found {
+		t.Error("found = true for a project with no rows, want false")
+	}
+
+	insert := func(status, sha1 string) {
+		t.Helper()
+		if err := s.InsertLog(LogRow{
+			Timestamp: time.Now(),
+			Project:   "app1",
+			FilePath:  "/tmp/app1.db",
+			Status:    status,
+			SHA1:      sha1,
+		}); err != nil {
+			t.Fatalf("InsertLog returned error: %v", err)
+		}
+	}
+
+	insert("ok", "hash-v1")
+	insert("error", "hash-v2") // a later, failed run should not shadow the last successful hash
+	insert("ok", "")           // an ok row predating the sha1 column (or otherwise unset)
+
+	sum, found, err := s.LatestOKSHA1("app1")
+	if err != nil {
+		t.Fatalf("LatestOKSHA1 returned error: %v", err)
+	}
+	if found {
+		t.Errorf("found = true with sum %q, want false (latest ok row has no sha1 recorded)", sum)
+	}
+}
+
+func TestMigrate_AddsSHA1ColumnToExistingTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.sqlite3")
+
+	// Simulate a pre-sha1 database: create the table without the column and
+	// insert a row, bypassing Open/migrate.
+	pre, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if _, err := pre.db.Exec(`ALTER TABLE backup_log DROP COLUMN sha1`); err != nil {
+		t.Fatalf("dropping sha1 column to simulate a legacy schema: %v", err)
+	}
+	if _, err := pre.db.Exec(
+		`INSERT INTO backup_log (timestamp, project, file_path, status) VALUES (?, ?, ?, ?)`,
+		time.Now().UTC().Format(time.RFC3339), "app1", "/tmp/app1.db", "ok",
+	); err != nil {
+		t.Fatalf("inserting into legacy schema: %v", err)
+	}
+	pre.Close()
+
+	post, err := Open(path)
+	if err != nil {
+		t.Fatalf("re-Open (migrate legacy schema) returned error: %v", err)
+	}
+	defer post.Close()
+
+	hasSHA1, err := post.hasSHA1Column()
+	if err != nil {
+		t.Fatalf("hasSHA1Column returned error: %v", err)
+	}
+	if !hasSHA1 {
+		t.Error("hasSHA1Column = false after migrate, want true")
+	}
+
+	// The pre-existing row should read back with no sha1, not an error.
+	_, found, err := post.LatestOKSHA1("app1")
+	if err != nil {
+		t.Fatalf("LatestOKSHA1 returned error: %v", err)
+	}
+	if found {
+		t.Error("found = true for a row that predates the sha1 column, want false")
+	}
+}

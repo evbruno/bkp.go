@@ -3,6 +3,8 @@ package runner
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -49,7 +51,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 	start := time.Now()
 	sourcePath := filepath.Join(p.BaseDir, p.File)
 
-	fail := func(err error, fileSize int64, compressedSize *int64) Result {
+	fail := func(err error, fileSize int64, compressedSize *int64, sha1sum string) Result {
 		duration := time.Since(start)
 		_ = st.InsertLog(store.LogRow{
 			Timestamp:      start,
@@ -60,18 +62,46 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 			Status:         "error",
 			Error:          err.Error(),
 			DurationMs:     duration.Milliseconds(),
+			SHA1:           sha1sum,
 		})
 		return Result{Project: p.Name, Status: "error", Error: err.Error(), Duration: duration}
 	}
 
 	info, err := os.Stat(sourcePath)
 	if err != nil {
-		return fail(fmt.Errorf("stat source file: %w", err), 0, nil)
+		return fail(fmt.Errorf("stat source file: %w", err), 0, nil, "")
 	}
 	fileSize := info.Size()
 
 	if opts.DryRun {
 		return Result{Project: p.Name, Status: "dry-run", Duration: time.Since(start)}
+	}
+
+	sha1sum, err := sha1File(sourcePath)
+	if err != nil {
+		return fail(fmt.Errorf("hash source file: %w", err), fileSize, nil, "")
+	}
+
+	if p.SkipUnchangedEnabled() {
+		lastSHA1, found, err := st.LatestOKSHA1(p.Name)
+		if err != nil {
+			return fail(fmt.Errorf("checking last backup: %w", err), fileSize, nil, sha1sum)
+		}
+		if found && lastSHA1 == sha1sum {
+			duration := time.Since(start)
+			if err := st.InsertLog(store.LogRow{
+				Timestamp:  start,
+				Project:    p.Name,
+				FilePath:   sourcePath,
+				FileSize:   fileSize,
+				Status:     "skipped",
+				DurationMs: duration.Milliseconds(),
+				SHA1:       sha1sum,
+			}); err != nil {
+				return Result{Project: p.Name, Status: "error", Error: err.Error(), Duration: duration}
+			}
+			return Result{Project: p.Name, Status: "skipped", Duration: duration}
+		}
 	}
 
 	artifact := p.File
@@ -86,7 +116,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 
 		size, err := gzipFile(sourcePath, gzPath)
 		if err != nil {
-			return fail(fmt.Errorf("compress: %w", err), fileSize, nil)
+			return fail(fmt.Errorf("compress: %w", err), fileSize, nil, sha1sum)
 		}
 		compressedSize = &size
 		artifact = gzName
@@ -94,7 +124,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 
 	cmd := substitute(p.Command, artifact)
 	if err := runShell(cmd, p.BaseDir); err != nil {
-		return fail(fmt.Errorf("command failed: %w", err), fileSize, compressedSize)
+		return fail(fmt.Errorf("command failed: %w", err), fileSize, compressedSize, sha1sum)
 	}
 
 	duration := time.Since(start)
@@ -106,6 +136,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 		CompressedSize: compressedSize,
 		Status:         "ok",
 		DurationMs:     duration.Milliseconds(),
+		SHA1:           sha1sum,
 	}); err != nil {
 		return Result{Project: p.Name, Status: "error", Error: err.Error(), Duration: duration}
 	}
@@ -174,6 +205,23 @@ func runShell(command, dir string) error {
 		return err
 	}
 	return nil
+}
+
+// sha1File returns the hex-encoded sha1 of the file at path's uncompressed
+// contents, used to detect an unchanged source file across runs.
+func sha1File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha1.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func gzipFile(src, dst string) (int64, error) {

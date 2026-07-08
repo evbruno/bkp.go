@@ -82,10 +82,10 @@ bkp status --config path/to/spec.yaml
 ```
 
 ```
-PROJECT       LAST RUN (UTC)       STATUS  SIZE   GZ SIZE  DURATION  ERROR
-app-one       2026-07-08 19:50:52  ok      32     56       8ms
-app-two       2026-07-08 19:50:52  ok      32     -        6ms
-orchestrator  2026-07-08 19:50:52  ok      12288  -        0s
+PROJECT       LAST RUN (UTC)       STATUS   SIZE   GZ SIZE  DURATION  ERROR
+app-one       2026-07-08 22:40:25  ok       43     67       7ms
+app-two       2026-07-08 22:40:25  skipped  32     -        0s
+orchestrator  2026-07-08 22:40:25  ok       12288  -        0s
 ```
 
 ## Config format
@@ -104,6 +104,7 @@ projects:
     command: rclone copy {{file}} backups:my-app
     compress: true                      # optional, default true
     timestamp: true                     # optional, default true (only matters when compress: true)
+    skip_unchanged: true                # optional, default true
 
   - name: My Petshop platform
     base_dir: /home/ubuntu/dbs/
@@ -120,6 +121,13 @@ run's artifact gets its own file instead of overwriting the last one. Set
 `timestamp` has no effect. If `command` doesn't contain `{{file}}`, it runs
 verbatim. Commands run as `sh -c "<command>"` with working directory
 `base_dir`.
+
+Before doing anything else, the source file is sha1'd (uncompressed content).
+By default (`skip_unchanged: true`), if that sha1 matches the sha1 recorded
+on the project's last **successful** run, the whole thing — compression and
+`command` — is skipped, and a `skipped` row is logged instead (an `error`
+row never counts as a match, so a broken previous run always retries). Set
+`skip_unchanged: false` to always run regardless of the hash.
 
 `target`, `base_dir`, and `file` support `$VAR` / `${VAR}` and a leading `~`
 (e.g. `target: $HOME/backups.sqlite3` or `base_dir: ~/dbs`) — these are
@@ -167,13 +175,13 @@ projects:
     compress: false
 ```
 
-Output:
+First run's output:
 
 ```
 Backup summary: Demo backup
 ----------------------------------------------------------------------
 app-one                        ok            9ms
-app-two                        ok            6ms
+app-two                        ok            7ms
 orchestrator                   ok            7ms
 ----------------------------------------------------------------------
 ```
@@ -183,10 +191,36 @@ orchestrator                   ok            7ms
 `compress` and `timestamp` at their defaults of `true` — the timestamp
 suffix will differ on your run), `production2.sqlite3` (uncompressed, since
 `app-two` set `compress: false`), and a copy of the orchestrator DB itself.
-Re-running `make run` adds a new `production1.sqlite3.<timestamp>.gz` rather
-than overwriting the previous one.
 
-Every call is logged to `orchestrator.sqlite3` in the `backup_log` table:
+Since the demo's fixture files never change, running `make run` again
+**skips** both projects (`skip_unchanged` also defaults to `true`) — the
+orchestrator itself still runs every time, since it has no compress/hash
+step of its own:
+
+```
+Backup summary: Demo backup
+----------------------------------------------------------------------
+app-one                        skipped        0s
+app-two                        skipped        0s
+orchestrator                   ok            8ms
+----------------------------------------------------------------------
+```
+
+Touching `examples/demo/dbs/production1.sqlite3` (changing its sha1) makes
+`app-one` run again — and only `app-one`, since `app-two`'s file is still
+unchanged:
+
+```
+Backup summary: Demo backup
+----------------------------------------------------------------------
+app-one                        ok            7ms
+app-two                        skipped        0s
+orchestrator                   ok            8ms
+----------------------------------------------------------------------
+```
+
+Every call — including skips — is logged to `orchestrator.sqlite3` in the
+`backup_log` table:
 
 ```sh
 sqlite3 examples/demo/orchestrator.sqlite3 \
@@ -194,8 +228,11 @@ sqlite3 examples/demo/orchestrator.sqlite3 \
 ```
 
 ```
-app-one|examples/demo/dbs/production1.sqlite3|32|56|ok|8
-app-two|examples/demo/dbs/production2.sqlite3|32||ok|5
+app-one|examples/demo/dbs/production1.sqlite3|32|56|ok|9
+app-two|examples/demo/dbs/production2.sqlite3|32||ok|6
+orchestrator|examples/demo/orchestrator.sqlite3|12288||ok|0
+app-one|examples/demo/dbs/production1.sqlite3|32||skipped|0
+app-two|examples/demo/dbs/production2.sqlite3|32||skipped|0
 orchestrator|examples/demo/orchestrator.sqlite3|12288||ok|0
 ```
 
@@ -215,9 +252,9 @@ orchestrator                   dry-run        0s
 ----------------------------------------------------------------------
 ```
 
-Re-running `make run` overwrites `examples/demo/orchestrator.sqlite3` and the
-files under `examples/demo/remote/`; both are gitignored generated output,
-not fixtures.
+`examples/demo/orchestrator.sqlite3` and everything under
+`examples/demo/remote/` are gitignored generated output, not fixtures — feel
+free to delete them and re-run `make run` from a clean slate.
 
 ### `$HOME`-based example
 
@@ -256,4 +293,8 @@ gzips `$HOME/dbs/logs_user.txt` to something like
 `$HOME/dbs/logs_user.txt.20260708T193000Z.gz` (compression always writes next
 to the source, and defaults to a timestamped name so re-running doesn't
 clobber the previous artifact), then copies that artifact into
-`$HOME/dbs_bkp/`, alongside the orchestrator DB itself.
+`$HOME/dbs_bkp/`, alongside the orchestrator DB itself. Since
+`skip_unchanged` defaults to `true`, running this again against the same
+unmodified log file logs a `skipped` row instead of re-gzipping it — a real
+log file that's actively appended to would instead get a new sha1 each time
+and back up normally.

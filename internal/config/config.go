@@ -12,12 +12,13 @@ import (
 // Project describes a single backup unit: a source file under base_dir,
 // compressed (by default) and handed to command as {{file}}.
 type Project struct {
-	Name      string `yaml:"name"`
-	BaseDir   string `yaml:"base_dir"`
-	File      string `yaml:"file"`
-	Command   string `yaml:"command"`
-	Compress  *bool  `yaml:"compress"`
-	Timestamp *bool  `yaml:"timestamp"`
+	Name          string `yaml:"name"`
+	BaseDir       string `yaml:"base_dir"`
+	File          string `yaml:"file"`
+	Command       string `yaml:"command"`
+	Compress      *bool  `yaml:"compress"`
+	Timestamp     *bool  `yaml:"timestamp"`
+	SkipUnchanged *bool  `yaml:"skip_unchanged"`
 }
 
 // CompressEnabled returns the effective compress setting, defaulting to true.
@@ -37,6 +38,17 @@ func (p *Project) TimestampEnabled() bool {
 		return true
 	}
 	return *p.Timestamp
+}
+
+// SkipUnchangedEnabled returns the effective skip_unchanged setting,
+// defaulting to true: if the source file's sha1 matches the sha1 of the
+// project's last successful backup, the run is skipped entirely (no
+// compression, no command execution).
+func (p *Project) SkipUnchangedEnabled() bool {
+	if p.SkipUnchanged == nil {
+		return true
+	}
+	return *p.SkipUnchanged
 }
 
 // Config is the top-level backup spec loaded from YAML.

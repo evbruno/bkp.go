@@ -198,11 +198,14 @@ func TestRun_TimestampDisabledKeepsFixedName(t *testing.T) {
 	}
 
 	timestampOff := false
+	skipUnchangedOff := false
 	cfg := &config.Config{
 		Title:  "test",
 		Target: filepath.Join(dir, "orchestrator.sqlite3"),
 		Projects: []config.Project{
-			{Name: "app", BaseDir: dir, File: "app.db", Command: "true", Timestamp: &timestampOff},
+			// skip_unchanged is disabled here since this test is specifically
+			// about the timestamp/overwrite behavior, not the skip feature.
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "true", Timestamp: &timestampOff, SkipUnchanged: &skipUnchangedOff},
 		},
 	}
 	backupSelf := false
@@ -227,5 +230,153 @@ func TestRun_TimestampDisabledKeepsFixedName(t *testing.T) {
 	}
 	if len(matches) != 1 {
 		t.Errorf("glob app.db*.gz = %v, want exactly 1 file (overwritten, not duplicated)", matches)
+	}
+}
+
+func TestRun_SkipsUnchangedFileByDefault(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran.txt")
+	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			// Appends one line per actual run, so a skipped run leaves the
+			// line count unchanged.
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "echo ran >> " + marker},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+
+	if results := Run(cfg, st, Options{}); results[0].Status != "ok" {
+		t.Fatalf("first run status = %q, want ok (error=%s)", results[0].Status, results[0].Error)
+	}
+	results := Run(cfg, st, Options{})
+	if results[0].Status != "skipped" {
+		t.Fatalf("second run (unchanged file) status = %q, want skipped", results[0].Status)
+	}
+	if results[0].Error != "" {
+		t.Errorf("skipped run Error = %q, want empty", results[0].Error)
+	}
+
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("reading marker file: %v", err)
+	}
+	if lines := strings.Count(string(got), "ran"); lines != 1 {
+		t.Errorf("command ran %d times, want exactly 1 (second run should have been skipped)", lines)
+	}
+
+	sum, found, err := st.LatestOKSHA1("app")
+	if err != nil {
+		t.Fatalf("LatestOKSHA1 returned error: %v", err)
+	}
+	if !found || sum == "" {
+		t.Error("LatestOKSHA1 = (empty, false), want a recorded sha1 from the successful run")
+	}
+}
+
+func TestRun_SkipUnchangedDisabled_AlwaysRuns(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran.txt")
+	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	skipOff := false
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "echo ran >> " + marker, SkipUnchanged: &skipOff},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+
+	for i := 0; i < 2; i++ {
+		if results := Run(cfg, st, Options{}); results[0].Status != "ok" {
+			t.Fatalf("run %d status = %q, want ok (error=%s)", i, results[0].Status, results[0].Error)
+		}
+	}
+
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("reading marker file: %v", err)
+	}
+	if lines := strings.Count(string(got), "ran"); lines != 2 {
+		t.Errorf("command ran %d times, want exactly 2 (skip_unchanged: false should never skip)", lines)
+	}
+}
+
+func TestRun_ReRunsAfterFileContentChanges(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "app.db")
+	if err := os.WriteFile(src, []byte("data-v1"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "true"},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+
+	if results := Run(cfg, st, Options{}); results[0].Status != "ok" {
+		t.Fatalf("first run status = %q, want ok (error=%s)", results[0].Status, results[0].Error)
+	}
+
+	if err := os.WriteFile(src, []byte("data-v2"), 0o644); err != nil {
+		t.Fatalf("rewriting fixture: %v", err)
+	}
+
+	results := Run(cfg, st, Options{})
+	if results[0].Status != "ok" {
+		t.Errorf("run after content change status = %q, want ok (content differs, should not skip)", results[0].Status)
+	}
+}
+
+func TestRun_DoesNotSkipBasedOnFailedRun(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "false"},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+
+	if results := Run(cfg, st, Options{}); results[0].Status != "error" {
+		t.Fatalf("first run status = %q, want error", results[0].Status)
+	}
+
+	// Same file content, but the only prior row is an error, not "ok" — so
+	// this must actually attempt the backup again, not skip.
+	cfg.Projects[0].Command = "true"
+	results := Run(cfg, st, Options{})
+	if results[0].Status != "ok" {
+		t.Errorf("second run status = %q, want ok (a prior error shouldn't count as \"unchanged\")", results[0].Status)
 	}
 }

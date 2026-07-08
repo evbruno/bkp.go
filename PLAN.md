@@ -19,6 +19,14 @@ orchestrator database, and logs every backup call to a single SQLite table.
   final artifact path (the timestamped/fixed `.gz` name when compressed,
   otherwise `file`). If a command contains no `{{file}}`, it runs verbatim
   (matches the rclone examples, which use relative names).
+- **Skip unchanged files**: before compressing/running, sha1 the uncompressed
+  source file and compare it to the sha1 recorded on that project's last
+  *successful* (`status = "ok"`) row. On a match (`skip_unchanged: true`, the
+  default), skip compression and the command entirely, and log a `skipped`
+  row (same sha1/file_size, no `compressed_size`, no command run). A prior
+  `error` row never counts as a match — only `ok` rows anchor the comparison,
+  so a broken previous run always retries. Set `skip_unchanged: false` to
+  always run regardless of the hash.
 - **Command execution**: `sh -c "<command>"` with working directory = `base_dir`.
   Supports pipes/env/relative filenames.
 - **On failure**: a failing project does not stop the run. Log the failure
@@ -41,6 +49,7 @@ projects:
     command: rclone copy {{file}} backups:my-app
     compress: true                      # optional, default true
     timestamp: true                     # optional, default true (only matters when compress: true)
+    skip_unchanged: true                # optional, default true
 
   - name: My Petshop platform
     base_dir: /home/ubuntu/dbs/
@@ -54,6 +63,7 @@ projects:
 - Each project: `name`, `base_dir`, `file`, `command` required.
 - `compress` defaults to `true` when omitted.
 - `timestamp` defaults to `true` when omitted; only relevant when `compress: true`.
+- `skip_unchanged` defaults to `true` when omitted.
 - `backup_self` defaults to `true`; if true, `self_command` is required.
 - Duplicate project `name`s → error (ambiguous log rows).
 
@@ -67,9 +77,11 @@ CREATE TABLE IF NOT EXISTS backup_log (
   file_path          TEXT    NOT NULL,   -- full path of the source/artifact
   file_size          INTEGER,            -- original file size in bytes
   compressed_size    INTEGER,            -- gzip size in bytes, NULL if not compressed
-  status             TEXT    NOT NULL,   -- "ok" | "error"
+  status             TEXT    NOT NULL,   -- "ok" | "error" | "skipped"
   error              TEXT,               -- populated when status = "error"
-  duration_ms        INTEGER             -- wall-clock of the backup command
+  duration_ms        INTEGER,            -- wall-clock of the backup command
+  sha1               TEXT                -- sha1 of the uncompressed source file, added via
+                                          -- ALTER TABLE for DBs created before this column existed
 );
 ```
 
@@ -81,12 +93,14 @@ CREATE TABLE IF NOT EXISTS backup_log (
 2. Load + validate YAML.
 3. Open/create the orchestrator SQLite DB at `target`; ensure `backup_log` exists.
 4. For each project (sequentially):
-   a. Resolve source path = `base_dir/file`; stat for `file_size`.
-   b. If `compress`: gzip to `file.gz`, record `compressed_size`; artifact = `.gz`.
-      Else: artifact = source.
-   c. Substitute `{{file}}` → artifact path in `command`.
-   d. Run `sh -c command` in `base_dir`, time it.
-   e. Insert a `backup_log` row (ok/error).
+   a. Resolve source path = `base_dir/file`; stat for `file_size`; sha1 the file contents.
+   b. If `skip_unchanged` and the sha1 matches the project's last `ok` row: insert a
+      `skipped` row and move on — no compression, no command.
+   c. If `compress`: gzip to `file.gz` (or `file.<ISO8601>.gz` if `timestamp`),
+      record `compressed_size`; artifact = the `.gz` name. Else: artifact = source.
+   d. Substitute `{{file}}` → artifact path in `command`.
+   e. Run `sh -c command` in `base_dir`, time it.
+   f. Insert a `backup_log` row (ok/error), including the sha1 computed in (a).
 5. If `backup_self`: run `self_command` similarly (working dir = dir of `target`),
    log as `orchestrator`. Note: the self-backup row itself is written *before*
    the self_command runs so the copied DB is consistent-ish; document this caveat.
@@ -116,12 +130,15 @@ bkp.go/
 ## Testing
 - `config`: valid/invalid YAML, default application.
 - `runner`: compress size math, `{{file}}` substitution, failure isolation
-  (one project fails, others still logged), using a fake command (`true`/`false`).
-- `store`: migrate is idempotent; InsertLog round-trips.
+  (one project fails, others still logged), timestamped vs fixed artifact
+  names, skip-unchanged behavior (skips on matching sha1, re-runs on content
+  change, never skips based on a prior `error` row), using a fake command
+  (`true`/`false`).
+- `store`: migrate is idempotent (including adding `sha1` to a pre-existing
+  table); InsertLog round-trips; `LatestOKSHA1` / `LatestPerProject` queries.
 
 ## Open / future
 - Concurrency across projects (currently sequential).
 - Retention/pruning of old artifacts.
 - Retries on command failure.
-- Checksums per backup row.
 ```
