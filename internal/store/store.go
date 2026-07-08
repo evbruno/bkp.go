@@ -91,6 +91,55 @@ func (s *Store) InsertLog(row LogRow) error {
 	return nil
 }
 
+// LatestPerProject returns the most recent backup_log row for every distinct
+// project, ordered by project name. Read-only.
+func (s *Store) LatestPerProject() ([]LogRow, error) {
+	rows, err := s.db.Query(`
+SELECT project, timestamp, file_path, file_size, compressed_size, status, error, duration_ms
+FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY project ORDER BY id DESC) AS rn
+  FROM backup_log
+)
+WHERE rn = 1
+ORDER BY project;`)
+	if err != nil {
+		return nil, fmt.Errorf("querying latest per project: %w", err)
+	}
+	defer rows.Close()
+
+	var result []LogRow
+	for rows.Next() {
+		var (
+			r              LogRow
+			timestamp      string
+			compressedSize sql.NullInt64
+			errMsg         sql.NullString
+		)
+
+		if err := rows.Scan(&r.Project, &timestamp, &r.FilePath, &r.FileSize, &compressedSize, &r.Status, &errMsg, &r.DurationMs); err != nil {
+			return nil, fmt.Errorf("scanning latest row: %w", err)
+		}
+
+		r.Timestamp, err = time.Parse(time.RFC3339, timestamp)
+		if err != nil {
+			return nil, fmt.Errorf("parsing timestamp: %w", err)
+		}
+		if compressedSize.Valid {
+			r.CompressedSize = &compressedSize.Int64
+		}
+		if errMsg.Valid {
+			r.Error = errMsg.String
+		}
+
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading latest rows: %w", err)
+	}
+
+	return result, nil
+}
+
 // Close closes the underlying database handle.
 func (s *Store) Close() error {
 	return s.db.Close()

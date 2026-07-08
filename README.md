@@ -71,6 +71,23 @@ bkp --config path/to/spec.yaml [--dry-run]
 
 Exit code is non-zero if any project (or the self-backup) fails.
 
+### `bkp status`
+
+Read-only: prints the most recent `backup_log` row for each project (a
+single query, via `ROW_NUMBER() OVER (PARTITION BY project ...)`). It never
+runs a project's `command` or writes a log row.
+
+```sh
+bkp status --config path/to/spec.yaml
+```
+
+```
+PROJECT       LAST RUN (UTC)       STATUS  SIZE   GZ SIZE  DURATION  ERROR
+app-one       2026-07-08 19:50:52  ok      32     56       8ms
+app-two       2026-07-08 19:50:52  ok      32     -        6ms
+orchestrator  2026-07-08 19:50:52  ok      12288  -        0s
+```
+
 ## Config format
 
 ```yaml

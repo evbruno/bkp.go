@@ -97,3 +97,46 @@ func TestInsertLog_ErrorRow(t *testing.T) {
 		t.Errorf("error = %q, want %q", errMsg, "command failed")
 	}
 }
+
+func TestLatestPerProject(t *testing.T) {
+	s := openTestStore(t)
+
+	base := time.Now()
+	insert := func(project, status string, offset time.Duration) {
+		t.Helper()
+		if err := s.InsertLog(LogRow{
+			Timestamp: base.Add(offset),
+			Project:   project,
+			FilePath:  "/tmp/" + project,
+			FileSize:  100,
+			Status:    status,
+		}); err != nil {
+			t.Fatalf("InsertLog(%s) returned error: %v", project, err)
+		}
+	}
+
+	// app1: two rows, the second (later id) should win even though its
+	// status differs, proving latest-by-id rather than latest-by-status.
+	insert("app1", "error", 0)
+	insert("app1", "ok", time.Minute)
+
+	// app2: a single row.
+	insert("app2", "ok", 0)
+
+	rows, err := s.LatestPerProject()
+	if err != nil {
+		t.Fatalf("LatestPerProject returned error: %v", err)
+	}
+
+	if len(rows) != 2 {
+		t.Fatalf("len(rows) = %d, want 2", len(rows))
+	}
+
+	// Ordered by project name.
+	if rows[0].Project != "app1" || rows[0].Status != "ok" {
+		t.Errorf("rows[0] = %+v, want app1/ok (the later of its two rows)", rows[0])
+	}
+	if rows[1].Project != "app2" || rows[1].Status != "ok" {
+		t.Errorf("rows[1] = %+v, want app2/ok", rows[1])
+	}
+}
