@@ -12,11 +12,12 @@ import (
 // Project describes a single backup unit: a source file under base_dir,
 // compressed (by default) and handed to command as {{file}}.
 type Project struct {
-	Name     string `yaml:"name"`
-	BaseDir  string `yaml:"base_dir"`
-	File     string `yaml:"file"`
-	Command  string `yaml:"command"`
-	Compress *bool  `yaml:"compress"`
+	Name      string `yaml:"name"`
+	BaseDir   string `yaml:"base_dir"`
+	File      string `yaml:"file"`
+	Command   string `yaml:"command"`
+	Compress  *bool  `yaml:"compress"`
+	Timestamp *bool  `yaml:"timestamp"`
 }
 
 // CompressEnabled returns the effective compress setting, defaulting to true.
@@ -25,6 +26,17 @@ func (p *Project) CompressEnabled() bool {
 		return true
 	}
 	return *p.Compress
+}
+
+// TimestampEnabled returns the effective timestamp setting, defaulting to
+// true. Only relevant when CompressEnabled is true: it controls whether the
+// gzip artifact's filename gets a timestamp suffix, so successive runs don't
+// overwrite each other's compressed output.
+func (p *Project) TimestampEnabled() bool {
+	if p.Timestamp == nil {
+		return true
+	}
+	return *p.Timestamp
 }
 
 // Config is the top-level backup spec loaded from YAML.

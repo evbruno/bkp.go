@@ -78,13 +78,18 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 	var compressedSize *int64
 
 	if p.CompressEnabled() {
-		gzPath := sourcePath + ".gz"
+		gzName := p.File + ".gz"
+		if p.TimestampEnabled() {
+			gzName = fmt.Sprintf("%s.%s.gz", p.File, isoTimestamp(start))
+		}
+		gzPath := filepath.Join(p.BaseDir, gzName)
+
 		size, err := gzipFile(sourcePath, gzPath)
 		if err != nil {
 			return fail(fmt.Errorf("compress: %w", err), fileSize, nil)
 		}
 		compressedSize = &size
-		artifact = p.File + ".gz"
+		artifact = gzName
 	}
 
 	cmd := substitute(p.Command, artifact)
@@ -139,6 +144,13 @@ func runSelf(cfg *config.Config, st *store.Store, opts Options) Result {
 	}
 
 	return Result{Project: project, Status: "ok", Duration: time.Since(start)}
+}
+
+// isoTimestamp formats t as basic-format ISO 8601 UTC (e.g. 20260708T195149Z)
+// suitable for filenames: no colons or other separators shells/filesystems
+// treat specially, while still being unambiguously ISO 8601.
+func isoTimestamp(t time.Time) string {
+	return t.UTC().Format("20060102T150405Z")
 }
 
 func substitute(command, artifact string) string {

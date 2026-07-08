@@ -9,10 +9,16 @@ orchestrator database, and logs every backup call to a single SQLite table.
 - **Compress flow**: when `compress: true` (the default), gzip
   `base_dir/file` → `base_dir/file.gz`, then run the project `command`. The
   command operates on the produced artifact.
+- **Timestamped artifacts**: when `compress: true`, the gzip artifact is
+  named `file.<ISO8601>.gz` by default (basic-format UTC, e.g.
+  `file.20260708T193000Z.gz`), so each run produces a new file instead of
+  overwriting the last one. Set `timestamp: false` to go back to a fixed
+  `file.gz` name. Has no effect when `compress: false` (no artifact is
+  created in that case).
 - **Command placeholder**: the tool substitutes `{{file}}` in `command` with the
-  final artifact path (`file.gz` when compressed, otherwise `file`). If a
-  command contains no `{{file}}`, it runs verbatim (matches the rclone examples,
-  which use relative names).
+  final artifact path (the timestamped/fixed `.gz` name when compressed,
+  otherwise `file`). If a command contains no `{{file}}`, it runs verbatim
+  (matches the rclone examples, which use relative names).
 - **Command execution**: `sh -c "<command>"` with working directory = `base_dir`.
   Supports pipes/env/relative filenames.
 - **On failure**: a failing project does not stop the run. Log the failure
@@ -34,6 +40,7 @@ projects:
     file: production1.sqlite3
     command: rclone copy {{file}} backups:my-app
     compress: true                      # optional, default true
+    timestamp: true                     # optional, default true (only matters when compress: true)
 
   - name: My Petshop platform
     base_dir: /home/ubuntu/dbs/
@@ -46,6 +53,7 @@ projects:
 - `projects` required, at least one entry.
 - Each project: `name`, `base_dir`, `file`, `command` required.
 - `compress` defaults to `true` when omitted.
+- `timestamp` defaults to `true` when omitted; only relevant when `compress: true`.
 - `backup_self` defaults to `true`; if true, `self_command` is required.
 - Duplicate project `name`s → error (ambiguous log rows).
 

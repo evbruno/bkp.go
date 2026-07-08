@@ -103,6 +103,7 @@ projects:
     file: production1.sqlite3
     command: rclone copy {{file}} backups:my-app
     compress: true                      # optional, default true
+    timestamp: true                     # optional, default true (only matters when compress: true)
 
   - name: My Petshop platform
     base_dir: /home/ubuntu/dbs/
@@ -110,10 +111,15 @@ projects:
     command: rclone copy {{file}} backups:my-app
 ```
 
-`{{file}}` in `command` is substituted with the final artifact path
-(`file.gz` when `compress: true`, otherwise `file`). If `command` doesn't
-contain `{{file}}`, it runs verbatim. Commands run as `sh -c "<command>"`
-with working directory `base_dir`.
+`{{file}}` in `command` is substituted with the final artifact path. With
+`compress: true` (the default), that's the gzip output — by default named
+`file.<ISO8601>.gz` (e.g. `production1.sqlite3.20260708T193000Z.gz`) so each
+run's artifact gets its own file instead of overwriting the last one. Set
+`timestamp: false` to go back to a fixed `file.gz` name. With
+`compress: false`, `{{file}}` is just `file` — no artifact is created, so
+`timestamp` has no effect. If `command` doesn't contain `{{file}}`, it runs
+verbatim. Commands run as `sh -c "<command>"` with working directory
+`base_dir`.
 
 `target`, `base_dir`, and `file` support `$VAR` / `${VAR}` and a leading `~`
 (e.g. `target: $HOME/backups.sqlite3` or `base_dir: ~/dbs`) — these are
@@ -172,10 +178,13 @@ orchestrator                   ok            7ms
 ----------------------------------------------------------------------
 ```
 
-`examples/demo/remote/` now contains `production1.sqlite3.gz` (compressed,
-since `app-one` left `compress` at its default of `true`), `production2.sqlite3`
-(uncompressed, since `app-two` set `compress: false`), and a copy of the
-orchestrator DB itself.
+`examples/demo/remote/` now contains something like
+`production1.sqlite3.20260708T213516Z.gz` (compressed, since `app-one` left
+`compress` and `timestamp` at their defaults of `true` — the timestamp
+suffix will differ on your run), `production2.sqlite3` (uncompressed, since
+`app-two` set `compress: false`), and a copy of the orchestrator DB itself.
+Re-running `make run` adds a new `production1.sqlite3.<timestamp>.gz` rather
+than overwriting the previous one.
 
 Every call is logged to `orchestrator.sqlite3` in the `backup_log` table:
 
@@ -243,6 +252,8 @@ user-logs                      ok           13ms
 ----------------------------------------------------------------------
 ```
 
-gzips `$HOME/dbs/logs_user.txt` to `$HOME/dbs/logs_user.txt.gz` (compression
-always writes next to the source), then copies that artifact into
+gzips `$HOME/dbs/logs_user.txt` to something like
+`$HOME/dbs/logs_user.txt.20260708T193000Z.gz` (compression always writes next
+to the source, and defaults to a timestamped name so re-running doesn't
+clobber the previous artifact), then copies that artifact into
 `$HOME/dbs_bkp/`, alongside the orchestrator DB itself.
