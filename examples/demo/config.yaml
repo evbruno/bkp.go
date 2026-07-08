@@ -1,0 +1,17 @@
+title: Demo backup
+target: examples/demo/orchestrator.sqlite3
+backup_self: true
+self_command: cp orchestrator.sqlite3 remote/
+
+projects:
+  - name: app-one
+    base_dir: examples/demo/dbs
+    file: production1.sqlite3
+    command: cp {{file}} ../remote/
+    compress: true
+
+  - name: app-two
+    base_dir: examples/demo/dbs
+    file: production2.sqlite3
+    command: cp {{file}} ../remote/
+    compress: false

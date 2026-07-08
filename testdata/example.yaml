@@ -1,0 +1,16 @@
+title: VPS1 backup
+target: /home/ubuntu/backups.sqlite3
+backup_self: true
+self_command: rclone copy backups.sqlite3 backups:orchestrator
+
+projects:
+  - name: My cool rails App
+    base_dir: /home/ubuntu/dbs/
+    file: production1.sqlite3
+    command: rclone copy {{file}} backups:my-app
+    compress: true
+
+  - name: My Petshop platform
+    base_dir: /home/ubuntu/dbs/
+    file: production2.sqlite3
+    command: rclone copy {{file}} backups:my-app

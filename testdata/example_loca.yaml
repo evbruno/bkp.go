@@ -1,0 +1,10 @@
+title: Home logs backup
+target: $HOME/dbs_bkp/orchestrator.sqlite3
+backup_self: false
+
+projects:
+  - name: user-logs
+    base_dir: $HOME/dbs
+    file: logs_user.txt
+    command: cp {{file}} $HOME/dbs_bkp/
+    compress: true
