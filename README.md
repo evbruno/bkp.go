@@ -18,7 +18,16 @@ tar -xzf bkp.tar.gz
 sudo mv bkp-linux-amd64 /usr/local/bin/bkp
 ```
 
-Swap `amd64` for `arm64` on ARM hosts (Graviton, Ampere, Raspberry Pi, etc).
+Swap `amd64` for `arm64` on ARM hosts (Graviton, Ampere, Raspberry Pi, `aarch64`, etc).
+
+Each release also publishes a `checksums.txt` — verify the download before
+installing it:
+
+```sh
+curl -fsSL -o checksums.txt \
+  https://github.com/evbruno/bkp.go/releases/latest/download/checksums.txt
+sha256sum --ignore-missing -c checksums.txt
+```
 
 ## Build from source
 

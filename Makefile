@@ -31,8 +31,9 @@ tidy:
 clean:
 	rm -rf $(BUILD_DIR) $(DIST_DIR)
 
-# Cross-compiles release binaries (pure Go, no CGO needed) and tars them up,
-# mirroring what .github/workflows/release.yml does on a tag push.
+# Cross-compiles release binaries (pure Go, no CGO needed), tars them up, and
+# writes a checksums.txt, mirroring what .github/workflows/release.yml does
+# on a tag push.
 release:
 	mkdir -p $(DIST_DIR)
 	for platform in linux/amd64 linux/arm64; do \
@@ -42,3 +43,4 @@ release:
 		GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$$out .; \
 		tar -C $(DIST_DIR) -czf $(DIST_DIR)/$$out.tar.gz $$out; \
 	done
+	cd $(DIST_DIR) && (command -v sha256sum >/dev/null && sha256sum *.tar.gz || shasum -a 256 *.tar.gz) > checksums.txt
