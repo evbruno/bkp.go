@@ -5,6 +5,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-07-09
+
+### Added
+
+- Compressed artifacts are deleted from `base_dir` once the project's
+  `command` succeeds (`keep_compressed`, default `false`), since the gzip
+  file is just a temporary handoff to `command`. Set `keep_compressed: true`
+  to keep it around. A failing command always leaves the artifact in place
+  for inspection/retry.
+- `CHANGELOG.md`, surfaced as the body of each GitHub release.
+
 ## [0.0.3] - 2026-07-08
 
 ### Added
