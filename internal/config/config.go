@@ -9,6 +9,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	defaultConfigFile = "bkp.yaml"
+	defaultTargetFile = "bkp.sqlite3"
+)
+
 // Project describes a single backup unit: a source file under base_dir,
 // compressed (by default) and handed to command as {{file}}.
 type Project struct {
@@ -72,6 +77,38 @@ type Config struct {
 	Projects    []Project `yaml:"projects"`
 }
 
+// ResolveConfigPath returns the config path by precedence:
+// CLI flag > BKP_CONFIG env var > default ($HOME/.config/bkp/bkp.yaml).
+func ResolveConfigPath(cliPath string) (string, error) {
+	if strings.TrimSpace(cliPath) != "" {
+		return expandPath(cliPath), nil
+	}
+
+	if p, ok := os.LookupEnv("BKP_CONFIG"); ok && strings.TrimSpace(p) != "" {
+		return expandPath(p), nil
+	}
+
+	return DefaultConfigPath()
+}
+
+// DefaultConfigPath returns the default config location.
+func DefaultConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving home directory for default config path: %w", err)
+	}
+	return filepath.Join(home, ".config", "bkp", defaultConfigFile), nil
+}
+
+// DefaultTargetPath returns the default orchestrator SQLite path.
+func DefaultTargetPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving home directory for default target path: %w", err)
+	}
+	return filepath.Join(home, ".local", "state", "bkp", defaultTargetFile), nil
+}
+
 // BackupSelfEnabled returns the effective backup_self setting, defaulting to true.
 func (c *Config) BackupSelfEnabled() bool {
 	if c.BackupSelf == nil {
@@ -92,6 +129,10 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
+	if err := cfg.applyDefaults(); err != nil {
+		return nil, err
+	}
+
 	cfg.expandPaths()
 
 	if err := cfg.Validate(); err != nil {
@@ -99,6 +140,23 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func (c *Config) applyDefaults() error {
+	if strings.TrimSpace(c.Target) == "" {
+		if envTarget, ok := os.LookupEnv("BKP_TARGET"); ok && strings.TrimSpace(envTarget) != "" {
+			c.Target = envTarget
+			return nil
+		}
+
+		p, err := DefaultTargetPath()
+		if err != nil {
+			return err
+		}
+		c.Target = p
+	}
+
+	return nil
 }
 
 // expandPaths expands $VAR / ${VAR} and a leading ~ in fields that are used
@@ -127,7 +185,7 @@ func expandPath(s string) string {
 
 // Validate applies the rules documented in PLAN.md.
 func (c *Config) Validate() error {
-	if c.Target == "" {
+	if strings.TrimSpace(c.Target) == "" {
 		return fmt.Errorf("target is required")
 	}
 	if len(c.Projects) == 0 {

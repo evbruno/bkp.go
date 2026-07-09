@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,8 +74,9 @@ projects:
 	}
 }
 
-func TestLoad_MissingTarget(t *testing.T) {
+func TestLoad_MissingTarget_UsesDefault(t *testing.T) {
 	path := writeYAML(t, `
+backup_self: false
 projects:
   - name: app1
     base_dir: /tmp
@@ -82,8 +84,44 @@ projects:
     command: echo {{file}}
 `)
 
-	if _, err := Load(path); err == nil {
-		t.Fatal("Load returned nil error, want error for missing target")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+
+	want, err := DefaultTargetPath()
+	if err != nil {
+		t.Fatalf("DefaultTargetPath returned error: %v", err)
+	}
+	if cfg.Target != want {
+		t.Fatalf("Target = %q, want %q", cfg.Target, want)
+	}
+}
+
+func TestLoad_MissingTarget_UsesBKP_TARGETEnv(t *testing.T) {
+	t.Setenv("BKP_TARGET", "$HOME/custom/bkp.sqlite3")
+
+	path := writeYAML(t, `
+backup_self: false
+projects:
+  - name: app1
+    base_dir: /tmp
+    file: app1.db
+    command: echo {{file}}
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir returned error: %v", err)
+	}
+	want := filepath.Join(home, "custom", "bkp.sqlite3")
+	if cfg.Target != want {
+		t.Fatalf("Target = %q, want %q", cfg.Target, want)
 	}
 }
 
@@ -194,5 +232,87 @@ projects:
 
 	if _, err := Load(path); err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+}
+
+func TestResolveConfigPath_CLIWins(t *testing.T) {
+	t.Setenv("BKP_CONFIG", "/tmp/from-env.yaml")
+
+	got, err := ResolveConfigPath("~/from-cli.yaml")
+	if err != nil {
+		t.Fatalf("ResolveConfigPath returned error: %v", err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir returned error: %v", err)
+	}
+	want := filepath.Join(home, "from-cli.yaml")
+	if got != want {
+		t.Fatalf("ResolveConfigPath = %q, want %q", got, want)
+	}
+}
+
+func TestResolveConfigPath_EnvWinsWhenCLIMissing(t *testing.T) {
+	t.Setenv("BKP_CONFIG", "$HOME/from-env.yaml")
+
+	got, err := ResolveConfigPath("")
+	if err != nil {
+		t.Fatalf("ResolveConfigPath returned error: %v", err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir returned error: %v", err)
+	}
+	want := filepath.Join(home, "from-env.yaml")
+	if got != want {
+		t.Fatalf("ResolveConfigPath = %q, want %q", got, want)
+	}
+}
+
+func TestResolveConfigPath_DefaultWhenUnset(t *testing.T) {
+	t.Setenv("BKP_CONFIG", "")
+
+	got, err := ResolveConfigPath("  ")
+	if err != nil {
+		t.Fatalf("ResolveConfigPath returned error: %v", err)
+	}
+
+	want, err := DefaultConfigPath()
+	if err != nil {
+		t.Fatalf("DefaultConfigPath returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("ResolveConfigPath = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultPaths(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir returned error: %v", err)
+	}
+
+	configPath, err := DefaultConfigPath()
+	if err != nil {
+		t.Fatalf("DefaultConfigPath returned error: %v", err)
+	}
+	if !strings.HasPrefix(configPath, home) {
+		t.Fatalf("DefaultConfigPath %q does not start with home %q", configPath, home)
+	}
+	if filepath.Base(configPath) != "bkp.yaml" {
+		t.Fatalf("DefaultConfigPath base = %q, want bkp.yaml", filepath.Base(configPath))
+	}
+
+	targetPath, err := DefaultTargetPath()
+	if err != nil {
+		t.Fatalf("DefaultTargetPath returned error: %v", err)
+	}
+	if !strings.HasPrefix(targetPath, home) {
+		t.Fatalf("DefaultTargetPath %q does not start with home %q", targetPath, home)
+	}
+	if filepath.Base(targetPath) != "bkp.sqlite3" {
+		t.Fatalf("DefaultTargetPath base = %q, want bkp.sqlite3", filepath.Base(targetPath))
 	}
 }

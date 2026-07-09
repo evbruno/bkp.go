@@ -76,12 +76,18 @@ cross-compile is caught before it's tagged.
 ## Usage
 
 ```sh
-bkp --config path/to/spec.yaml [--dry-run]
+bkp [--config path/to/spec.yaml] [--dry-run]
 ```
 
-- `--config` (required): path to the YAML backup spec.
+- `--config` (optional): path to the YAML backup spec.
 - `--dry-run`: validate the config and report what would run, without
   compressing, executing commands, or writing log rows.
+
+Config path precedence:
+
+1. `--config`
+2. `BKP_CONFIG`
+3. default: `$HOME/.config/bkp/bkp.yaml`
 
 Exit code is non-zero if any project (or the self-backup) fails.
 
@@ -92,7 +98,7 @@ single query, via `ROW_NUMBER() OVER (PARTITION BY project ...)`). It never
 runs a project's `command` or writes a log row.
 
 ```sh
-bkp status --config path/to/spec.yaml
+bkp status [--config path/to/spec.yaml]
 ```
 
 ```
@@ -106,7 +112,7 @@ orchestrator  2026-07-08 22:47:12  ok       12288  -        0s
 
 ```yaml
 title: VPS1 backup
-target: /home/ubuntu/backups.sqlite3    # orchestrator SQLite DB (created if missing)
+target: /home/ubuntu/backups.sqlite3    # optional; default is $HOME/.local/state/bkp/bkp.sqlite3
 
 backup_self: true                       # optional, default true
 self_command: rclone copy backups.sqlite3 backups:orchestrator  # required iff backup_self
@@ -126,6 +132,15 @@ projects:
     file: production2.sqlite3
     command: rclone copy {{file}} backups:my-app
 ```
+
+`target` precedence (when loading YAML):
+
+1. `target` in YAML
+2. `BKP_TARGET`
+3. default: `$HOME/.local/state/bkp/bkp.sqlite3`
+
+When the resolved `target` directory does not exist, bkp creates it before
+opening the SQLite database.
 
 `{{file}}` in `command` is substituted with the final artifact path. With
 `compress: true` (the default), that's the gzip output — by default named

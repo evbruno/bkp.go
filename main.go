@@ -37,7 +37,7 @@ func main() {
 
 func runBackup(args []string) {
 	fs := flag.NewFlagSet("bkp", flag.ExitOnError)
-	configPath := fs.String("config", "", "path to backup spec YAML (required)")
+	configPath := fs.String("config", "", "path to backup spec YAML (optional: defaults to BKP_CONFIG or $HOME/.config/bkp/bkp.yaml)")
 	dryRun := fs.Bool("dry-run", false, "validate config and report what would run, without executing anything")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	fs.Parse(args)
@@ -47,13 +47,13 @@ func runBackup(args []string) {
 		return
 	}
 
-	if *configPath == "" {
-		fmt.Fprintln(os.Stderr, "error: --config is required")
-		fs.Usage()
-		os.Exit(2)
+	resolvedConfigPath, err := config.ResolveConfigPath(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(resolvedConfigPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -172,16 +172,16 @@ func osKernelArch() string {
 // backup_log row, it only reports the latest logged row per project.
 func runStatus(args []string) {
 	fs := flag.NewFlagSet("bkp status", flag.ExitOnError)
-	configPath := fs.String("config", "", "path to backup spec YAML (required)")
+	configPath := fs.String("config", "", "path to backup spec YAML (optional: defaults to BKP_CONFIG or $HOME/.config/bkp/bkp.yaml)")
 	fs.Parse(args)
 
-	if *configPath == "" {
-		fmt.Fprintln(os.Stderr, "error: --config is required")
-		fs.Usage()
-		os.Exit(2)
+	resolvedConfigPath, err := config.ResolveConfigPath(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(resolvedConfigPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

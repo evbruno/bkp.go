@@ -1,6 +1,7 @@
 package store
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -31,6 +32,21 @@ func TestOpen_MigrateIsIdempotent(t *testing.T) {
 		t.Fatalf("second Open (re-migrate) returned error: %v", err)
 	}
 	defer s2.Close()
+}
+
+func TestOpen_CreatesParentDirectory(t *testing.T) {
+	base := t.TempDir()
+	path := filepath.Join(base, "nested", "deeper", "test.sqlite3")
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	defer s.Close()
+
+	if _, err := os.Stat(filepath.Dir(path)); err != nil {
+		t.Fatalf("parent directory does not exist after Open: %v", err)
+	}
 }
 
 func TestInsertLog_RoundTrip(t *testing.T) {
