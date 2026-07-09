@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package bkp.v1;
+
+option go_package = "github.com/evbruno/bkp.go/internal/pb;pb";
+
+// BkpService exposes the backup_log SQLite store over gRPC.
+service BkpService {
+  rpc InsertLog(InsertLogRequest) returns (InsertLogResponse);
+  rpc GetLatestOKSHA1(GetLatestOKSHA1Request) returns (GetLatestOKSHA1Response);
+  rpc ListLatestPerProject(ListLatestPerProjectRequest) returns (ListLatestPerProjectResponse);
+}
+
+// LogRow mirrors store.LogRow.
+message LogRow {
+  string timestamp = 1;    // RFC3339, UTC
+  string project = 2;
+  string file_path = 3;
+  int64 file_size = 4;
+  optional int64 compressed_size = 5;
+  string status = 6;
+  string error = 7;
+  int64 duration_ms = 8;
+  string sha1 = 9;
+}
+
+message InsertLogRequest {
+  LogRow row = 1;
+}
+
+message InsertLogResponse {}
+
+message GetLatestOKSHA1Request {
+  string project = 1;
+}
+
+message GetLatestOKSHA1Response {
+  string sha1 = 1;
+  bool found = 2;
+}
+
+message ListLatestPerProjectRequest {}
+
+message ListLatestPerProjectResponse {
+  repeated LogRow rows = 1;
+}
