@@ -4,6 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
+	"runtime/debug"
+	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -12,10 +17,17 @@ import (
 	"github.com/evbruno/bkp.go/internal/store"
 )
 
-// version is set at build time via -ldflags "-X main.version=...".
+// version/commit/date are set at build time via -ldflags "-X main.*=...".
 var version = "dev"
+var commit = "unknown"
+var date = "unknown"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		printVersionReport()
+		return
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "status" {
 		runStatus(os.Args[2:])
 		return
@@ -31,7 +43,7 @@ func runBackup(args []string) {
 	fs.Parse(args)
 
 	if *showVersion {
-		fmt.Println(version)
+		printVersionReport()
 		return
 	}
 
@@ -59,6 +71,101 @@ func runBackup(args []string) {
 	if printSummary(cfg.Title, results) {
 		os.Exit(1)
 	}
+}
+
+func printVersionReport() {
+	goLinking := "unknown"
+	goTags := "none"
+
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "CGO_ENABLED":
+				switch s.Value {
+				case "1":
+					goLinking = "dynamic"
+				case "0":
+					goLinking = "static"
+				}
+			case "-tags":
+				if strings.TrimSpace(s.Value) != "" {
+					goTags = s.Value
+				}
+			}
+		}
+	}
+
+	rows := [][2]string{
+		{"bkp", version},
+		{"commit", commit},
+		{"date", date},
+		{"os/version", osVersion()},
+		{"os/kernel", fmt.Sprintf("%s (%s)", osKernelVersion(), osKernelArch())},
+		{"os/type", runtime.GOOS},
+		{"os/arch", runtime.GOARCH},
+		{"go/version", runtime.Version()},
+		{"go/linking", goLinking},
+		{"go/tags", goTags},
+	}
+
+	printBorderedKVTable(rows)
+}
+
+func printBorderedKVTable(rows [][2]string) {
+	if len(rows) == 0 {
+		return
+	}
+
+	keyWidth := 0
+	valueWidth := 0
+	for _, row := range rows {
+		if len(row[0]) > keyWidth {
+			keyWidth = len(row[0])
+		}
+		if len(row[1]) > valueWidth {
+			valueWidth = len(row[1])
+		}
+	}
+
+	border := "+" + strings.Repeat("-", keyWidth+2) + "+" + strings.Repeat("-", valueWidth+2) + "+"
+
+	fmt.Println(border)
+	for _, row := range rows {
+		fmt.Printf("| %-*s | %-*s |\n", keyWidth, row[0], valueWidth, row[1])
+	}
+	fmt.Println(border)
+}
+
+func osVersion() string {
+	bits := strconv.Itoa(strconv.IntSize)
+
+	version := "unknown"
+	switch runtime.GOOS {
+	case "darwin":
+		if out, err := exec.Command("sw_vers", "-productVersion").Output(); err == nil {
+			version = strings.TrimSpace(string(out))
+		}
+	case "linux":
+		if out, err := exec.Command("uname", "-r").Output(); err == nil {
+			version = strings.TrimSpace(string(out))
+		}
+	}
+
+	return fmt.Sprintf("%s %s (%s bit)", runtime.GOOS, version, bits)
+}
+
+func osKernelVersion() string {
+	if out, err := exec.Command("uname", "-r").Output(); err == nil {
+		return strings.TrimSpace(string(out))
+	}
+	return "unknown"
+}
+
+func osKernelArch() string {
+	if out, err := exec.Command("uname", "-m").Output(); err == nil {
+		return strings.TrimSpace(string(out))
+	}
+	return runtime.GOARCH
 }
 
 // runStatus is read-only: it never runs a project's command or writes a

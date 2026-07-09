@@ -3,7 +3,9 @@ PKG       := ./...
 BUILD_DIR := bin
 DIST_DIR  := dist
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS   := -s -w -X main.version=$(VERSION)
+COMMIT    := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+DATE      := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 .PHONY: all build run test vet fmt tidy clean release
 

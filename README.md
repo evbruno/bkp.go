@@ -41,7 +41,8 @@ make run        # builds, then runs against examples/demo/config.yaml
 make release    # cross-compiles linux/amd64, linux/arm64, darwin/arm64 into ./dist/*.tar.gz
 ```
 
-`bkp --version` reports the build's version, embedded via `-ldflags -X
+`bkp --version` (or `bkp version`) reports the build's version plus runtime
+details (OS/kernel/Go metadata), with the version embedded via `-ldflags -X
 main.version=...`. The binaries are pure Go (`modernc.org/sqlite`, no CGO),
 so cross-compilation only needs `GOOS`/`GOARCH` — no C toolchain required.
 
