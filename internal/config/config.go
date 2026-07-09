@@ -12,13 +12,14 @@ import (
 // Project describes a single backup unit: a source file under base_dir,
 // compressed (by default) and handed to command as {{file}}.
 type Project struct {
-	Name          string `yaml:"name"`
-	BaseDir       string `yaml:"base_dir"`
-	File          string `yaml:"file"`
-	Command       string `yaml:"command"`
-	Compress      *bool  `yaml:"compress"`
-	Timestamp     *bool  `yaml:"timestamp"`
-	SkipUnchanged *bool  `yaml:"skip_unchanged"`
+	Name           string `yaml:"name"`
+	BaseDir        string `yaml:"base_dir"`
+	File           string `yaml:"file"`
+	Command        string `yaml:"command"`
+	Compress       *bool  `yaml:"compress"`
+	Timestamp      *bool  `yaml:"timestamp"`
+	SkipUnchanged  *bool  `yaml:"skip_unchanged"`
+	KeepCompressed *bool  `yaml:"keep_compressed"`
 }
 
 // CompressEnabled returns the effective compress setting, defaulting to true.
@@ -49,6 +50,17 @@ func (p *Project) SkipUnchangedEnabled() bool {
 		return true
 	}
 	return *p.SkipUnchanged
+}
+
+// KeepCompressedEnabled returns the effective keep_compressed setting,
+// defaulting to false: once command succeeds, the gzip artifact produced by
+// CompressEnabled is deleted. Set keep_compressed: true to leave it on disk.
+// Only relevant when CompressEnabled is true.
+func (p *Project) KeepCompressedEnabled() bool {
+	if p.KeepCompressed == nil {
+		return false
+	}
+	return *p.KeepCompressed
 }
 
 // Config is the top-level backup spec loaded from YAML.

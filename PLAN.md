@@ -19,6 +19,12 @@ orchestrator database, and logs every backup call to a single SQLite table.
   final artifact path (the timestamped/fixed `.gz` name when compressed,
   otherwise `file`). If a command contains no `{{file}}`, it runs verbatim
   (matches the rclone examples, which use relative names).
+- **Deleting the compressed artifact**: when `compress: true` and the command
+  succeeds, the gzip artifact is deleted from `base_dir` (`keep_compressed:
+  false`, the default) — it's a temporary file produced only to hand to
+  `command`. Set `keep_compressed: true` to leave it on disk. Has no effect
+  when `compress: false` (there's no artifact to delete). A failing command
+  leaves the artifact in place either way, so it can be inspected/retried.
 - **Skip unchanged files**: before compressing/running, sha1 the uncompressed
   source file and compare it to the sha1 recorded on that project's last
   *successful* (`status = "ok"`) row. On a match (`skip_unchanged: true`, the
@@ -50,6 +56,7 @@ projects:
     compress: true                      # optional, default true
     timestamp: true                     # optional, default true (only matters when compress: true)
     skip_unchanged: true                # optional, default true
+    keep_compressed: false              # optional, default false (only matters when compress: true)
 
   - name: My Petshop platform
     base_dir: /home/ubuntu/dbs/
@@ -64,6 +71,7 @@ projects:
 - `compress` defaults to `true` when omitted.
 - `timestamp` defaults to `true` when omitted; only relevant when `compress: true`.
 - `skip_unchanged` defaults to `true` when omitted.
+- `keep_compressed` defaults to `false` when omitted; only relevant when `compress: true`.
 - `backup_self` defaults to `true`; if true, `self_command` is required.
 - Duplicate project `name`s → error (ambiguous log rows).
 
@@ -100,7 +108,9 @@ CREATE TABLE IF NOT EXISTS backup_log (
       record `compressed_size`; artifact = the `.gz` name. Else: artifact = source.
    d. Substitute `{{file}}` → artifact path in `command`.
    e. Run `sh -c command` in `base_dir`, time it.
-   f. Insert a `backup_log` row (ok/error), including the sha1 computed in (a).
+   f. If `compress` and the command succeeded and `keep_compressed` is not
+      set: delete the gzip artifact.
+   g. Insert a `backup_log` row (ok/error), including the sha1 computed in (a).
 5. If `backup_self`: run `self_command` similarly (working dir = dir of `target`),
    log as `orchestrator`. Note: the self-backup row itself is written *before*
    the self_command runs so the copied DB is consistent-ish; document this caveat.
@@ -133,7 +143,9 @@ bkp.go/
   (one project fails, others still logged), timestamped vs fixed artifact
   names, skip-unchanged behavior (skips on matching sha1, re-runs on content
   change, never skips based on a prior `error` row), using a fake command
-  (`true`/`false`).
+  (`true`/`false`), compressed-artifact deletion (deleted by default on
+  success, kept with `keep_compressed: true`, kept on command failure
+  regardless).
 - `store`: migrate is idempotent (including adding `sha1` to a pre-existing
   table); InsertLog round-trips; `LatestOKSHA1` / `LatestPerProject` queries.
 

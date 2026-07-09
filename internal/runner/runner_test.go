@@ -153,6 +153,91 @@ func TestRun_DryRunSkipsExecution(t *testing.T) {
 	}
 }
 
+func TestRun_DeletesCompressedArtifactByDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	timestampOff := false
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "true", Timestamp: &timestampOff},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+	results := Run(cfg, st, Options{})
+
+	if results[0].Status != "ok" {
+		t.Fatalf("status = %q, want ok (error=%s)", results[0].Status, results[0].Error)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app.db.gz")); !os.IsNotExist(err) {
+		t.Errorf("gz artifact still exists after a successful run, want it deleted (keep_compressed defaults to false): err=%v", err)
+	}
+}
+
+func TestRun_KeepCompressedTrueKeepsArtifact(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	timestampOff := false
+	keepCompressed := true
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "true", Timestamp: &timestampOff, KeepCompressed: &keepCompressed},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+	results := Run(cfg, st, Options{})
+
+	if results[0].Status != "ok" {
+		t.Fatalf("status = %q, want ok (error=%s)", results[0].Status, results[0].Error)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app.db.gz")); err != nil {
+		t.Errorf("expected gz artifact to survive with keep_compressed: true: %v", err)
+	}
+}
+
+func TestRun_ArtifactNotDeletedOnCommandFailure(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	timestampOff := false
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "false", Timestamp: &timestampOff},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+	results := Run(cfg, st, Options{})
+
+	if results[0].Status != "error" {
+		t.Fatalf("status = %q, want error", results[0].Status)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app.db.gz")); err != nil {
+		t.Errorf("expected gz artifact to survive a failed command (for debugging): %v", err)
+	}
+}
+
 func TestRun_CompressAddsTimestampByDefault(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
@@ -160,11 +245,12 @@ func TestRun_CompressAddsTimestampByDefault(t *testing.T) {
 	}
 
 	marker := filepath.Join(dir, "artifact-name.txt")
+	keepCompressed := true
 	cfg := &config.Config{
 		Title:  "test",
 		Target: filepath.Join(dir, "orchestrator.sqlite3"),
 		Projects: []config.Project{
-			{Name: "app", BaseDir: dir, File: "app.db", Command: "echo {{file}} > " + marker},
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "echo {{file}} > " + marker, KeepCompressed: &keepCompressed},
 		},
 	}
 	backupSelf := false
@@ -187,7 +273,7 @@ func TestRun_CompressAddsTimestampByDefault(t *testing.T) {
 		t.Errorf("artifact = %q, want to match app.db.<ISO8601>.gz", artifact)
 	}
 	if _, err := os.Stat(filepath.Join(dir, artifact)); err != nil {
-		t.Errorf("expected gz artifact %q to exist: %v", artifact, err)
+		t.Errorf("expected gz artifact %q to exist (keep_compressed: true): %v", artifact, err)
 	}
 }
 
@@ -199,13 +285,15 @@ func TestRun_TimestampDisabledKeepsFixedName(t *testing.T) {
 
 	timestampOff := false
 	skipUnchangedOff := false
+	keepCompressed := true
 	cfg := &config.Config{
 		Title:  "test",
 		Target: filepath.Join(dir, "orchestrator.sqlite3"),
 		Projects: []config.Project{
 			// skip_unchanged is disabled here since this test is specifically
 			// about the timestamp/overwrite behavior, not the skip feature.
-			{Name: "app", BaseDir: dir, File: "app.db", Command: "true", Timestamp: &timestampOff, SkipUnchanged: &skipUnchangedOff},
+			// keep_compressed is enabled so the artifact survives to be inspected.
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "true", Timestamp: &timestampOff, SkipUnchanged: &skipUnchangedOff, KeepCompressed: &keepCompressed},
 		},
 	}
 	backupSelf := false

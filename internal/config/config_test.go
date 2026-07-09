@@ -68,6 +68,9 @@ projects:
 	if !cfg.Projects[0].CompressEnabled() {
 		t.Error("CompressEnabled() = false, want true (default, since compress is omitted)")
 	}
+	if cfg.Projects[0].KeepCompressedEnabled() {
+		t.Error("KeepCompressedEnabled() = true, want false (default, since keep_compressed is omitted)")
+	}
 }
 
 func TestLoad_MissingTarget(t *testing.T) {

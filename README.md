@@ -118,6 +118,7 @@ projects:
     compress: true                      # optional, default true
     timestamp: true                     # optional, default true (only matters when compress: true)
     skip_unchanged: true                # optional, default true
+    keep_compressed: false              # optional, default false (only matters when compress: true)
 
   - name: My Petshop platform
     base_dir: /home/ubuntu/dbs/
@@ -134,6 +135,11 @@ run's artifact gets its own file instead of overwriting the last one. Set
 `timestamp` has no effect. If `command` doesn't contain `{{file}}`, it runs
 verbatim. Commands run as `sh -c "<command>"` with working directory
 `base_dir`.
+
+The gzip artifact is a temporary file: once `command` succeeds, it's deleted
+from `base_dir` (`keep_compressed: false`, the default). Set
+`keep_compressed: true` to leave it on disk instead. Either way, a failing
+`command` leaves the artifact in place so it can be inspected or retried.
 
 Before doing anything else, the source file is sha1'd (uncompressed content).
 By default (`skip_unchanged: true`), if that sha1 matches the sha1 recorded
@@ -206,6 +212,9 @@ orchestrator  orchestrator.sqlite3  -                                         ok
 `compress` and `timestamp` at their defaults of `true` — the timestamp
 suffix will differ on your run), `production2.sqlite3` (uncompressed, since
 `app-two` set `compress: false`), and a copy of the orchestrator DB itself.
+`examples/demo/dbs/` no longer has a matching `.gz` file, though: it was a
+temporary artifact, and `app-one` left `keep_compressed` at its default of
+`false`, so it's deleted right after the `cp` into `remote/` succeeds.
 The orchestrator's own row has no sha1: it's not sha1'd or subject to
 `skip_unchanged` — `backup_log` gets a new row on every single invocation
 (even a skip is a row), so the tracking DB never has "unchanged" content to
@@ -313,8 +322,10 @@ gzips `$HOME/dbs/logs_user.txt` to something like
 `$HOME/dbs/logs_user.txt.20260708T193000Z.gz` (compression always writes next
 to the source, and defaults to a timestamped name so re-running doesn't
 clobber the previous artifact), then copies that artifact into
-`$HOME/dbs_bkp/`, alongside the orchestrator DB itself. Since
-`skip_unchanged` defaults to `true`, running this again against the same
-unmodified log file logs a `skipped` row instead of re-gzipping it — a real
-log file that's actively appended to would instead get a new sha1 each time
-and back up normally.
+`$HOME/dbs_bkp/`, alongside the orchestrator DB itself. Since `keep_compressed`
+defaults to `false`, the copy in `$HOME/dbs/` is deleted right after the `cp`
+succeeds — only the one in `$HOME/dbs_bkp/` remains. Since `skip_unchanged`
+defaults to `true`, running this again against the same unmodified log file
+logs a `skipped` row instead of re-gzipping it — a real log file that's
+actively appended to would instead get a new sha1 each time and back up
+normally.

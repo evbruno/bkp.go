@@ -108,13 +108,14 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 
 	artifact := p.File
 	var compressedSize *int64
+	var gzPath string
 
 	if p.CompressEnabled() {
 		gzName := p.File + ".gz"
 		if p.TimestampEnabled() {
 			gzName = fmt.Sprintf("%s.%s.gz", p.File, isoTimestamp(start))
 		}
-		gzPath := filepath.Join(p.BaseDir, gzName)
+		gzPath = filepath.Join(p.BaseDir, gzName)
 
 		size, err := gzipFile(sourcePath, gzPath)
 		if err != nil {
@@ -127,6 +128,12 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 	cmd := substitute(p.Command, artifact)
 	if err := runShell(cmd, p.BaseDir); err != nil {
 		return fail(fmt.Errorf("command failed: %w", err), fileSize, compressedSize, sha1sum)
+	}
+
+	if p.CompressEnabled() && !p.KeepCompressedEnabled() {
+		if err := os.Remove(gzPath); err != nil {
+			return fail(fmt.Errorf("removing compressed artifact: %w", err), fileSize, compressedSize, sha1sum)
+		}
 	}
 
 	duration := time.Since(start)
