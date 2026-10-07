@@ -553,3 +553,113 @@ func TestRun_ResultIncludesFileNameAndSHA1(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+func writeTree(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", name, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("writing fixture %s: %v", name, err)
+		}
+	}
+}
+
+func TestRun_DirectoryIsTarGzipped(t *testing.T) {
+	dir := t.TempDir()
+	writeTree(t, filepath.Join(dir, "walle"), map[string]string{
+		"a.txt":       "alpha",
+		"sub/b.txt":   "bravo",
+		"sub/c/d.txt": "delta",
+	})
+
+	extractTo := filepath.Join(dir, "out")
+	if err := os.Mkdir(extractTo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "walle", BaseDir: dir, File: "walle", Command: "tar -xzf {{file}} -C " + extractTo},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+	results := Run(cfg, st, Options{})
+	if results[0].Status != "ok" {
+		t.Fatalf("status = %q, want ok (error=%s)", results[0].Status, results[0].Error)
+	}
+
+	got, err := os.ReadFile(filepath.Join(extractTo, "walle", "sub", "c", "d.txt"))
+	if err != nil {
+		t.Fatalf("reading extracted file: %v", err)
+	}
+	if string(got) != "delta" {
+		t.Errorf("extracted content = %q, want %q", got, "delta")
+	}
+
+	matches, _ := filepath.Glob(filepath.Join(dir, "walle*.tar.gz"))
+	if len(matches) != 0 {
+		t.Errorf("tarball still on disk after success: %v", matches)
+	}
+}
+
+func TestRun_DirectorySkipsUnchangedAndDetectsChanges(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "walle")
+	writeTree(t, src, map[string]string{"a.txt": "alpha", "sub/b.txt": "bravo"})
+
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "walle", BaseDir: dir, File: "walle", Command: "true"},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+	if r := Run(cfg, st, Options{}); r[0].Status != "ok" {
+		t.Fatalf("first run status = %q, want ok (error=%s)", r[0].Status, r[0].Error)
+	}
+	if r := Run(cfg, st, Options{}); r[0].Status != "skipped" {
+		t.Fatalf("unchanged dir status = %q, want skipped", r[0].Status)
+	}
+
+	writeTree(t, src, map[string]string{"sub/new.txt": "new"})
+	if r := Run(cfg, st, Options{}); r[0].Status != "ok" {
+		t.Fatalf("after adding a file status = %q, want ok (error=%s)", r[0].Status, r[0].Error)
+	}
+}
+
+func TestRun_DirectoryWithoutCompressPassesDirAsIs(t *testing.T) {
+	dir := t.TempDir()
+	writeTree(t, filepath.Join(dir, "walle"), map[string]string{"a.txt": "alpha"})
+	marker := filepath.Join(dir, "artifact.txt")
+
+	compressOff := false
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "walle", BaseDir: dir, File: "walle", Command: "echo {{file}} > " + marker, Compress: &compressOff},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+	if r := Run(cfg, st, Options{}); r[0].Status != "ok" {
+		t.Fatalf("status = %q, want ok (error=%s)", r[0].Status, r[0].Error)
+	}
+	got, _ := os.ReadFile(marker)
+	if strings.TrimSpace(string(got)) != "walle" {
+		t.Errorf("{{file}} = %q, want %q", strings.TrimSpace(string(got)), "walle")
+	}
+}

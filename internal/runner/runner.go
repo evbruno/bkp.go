@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha1"
@@ -73,13 +74,24 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 	if err != nil {
 		return fail(fmt.Errorf("stat source file: %w", err), 0, nil, "")
 	}
+	isDir := info.IsDir()
 	fileSize := info.Size()
+	if isDir {
+		if fileSize, err = dirSize(sourcePath); err != nil {
+			return fail(fmt.Errorf("stat source dir: %w", err), 0, nil, "")
+		}
+	}
 
 	if opts.DryRun {
 		return Result{Project: p.Name, FileName: p.File, Status: "dry-run", Duration: time.Since(start)}
 	}
 
-	sha1sum, err := sha1File(sourcePath)
+	var sha1sum string
+	if isDir {
+		sha1sum, err = sha1Dir(sourcePath)
+	} else {
+		sha1sum, err = sha1File(sourcePath)
+	}
 	if err != nil {
 		return fail(fmt.Errorf("hash source file: %w", err), fileSize, nil, "")
 	}
@@ -111,13 +123,23 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 	var gzPath string
 
 	if p.CompressEnabled() {
-		gzName := p.File + ".gz"
+		// A directory is archived as <dir>.tar.gz, next to it in base_dir.
+		stem, ext := p.File, ".gz"
+		if isDir {
+			stem, ext = filepath.Base(sourcePath), ".tar.gz"
+		}
+		gzName := stem + ext
 		if p.TimestampEnabled() {
-			gzName = fmt.Sprintf("%s.%s.gz", p.File, isoTimestamp(start))
+			gzName = fmt.Sprintf("%s.%s%s", stem, isoTimestamp(start), ext)
 		}
 		gzPath = filepath.Join(p.BaseDir, gzName)
 
-		size, err := gzipFile(sourcePath, gzPath)
+		var size int64
+		if isDir {
+			size, err = tarGzDir(sourcePath, gzPath)
+		} else {
+			size, err = gzipFile(sourcePath, gzPath)
+		}
 		if err != nil {
 			return fail(fmt.Errorf("compress: %w", err), fileSize, nil, sha1sum)
 		}
@@ -232,6 +254,146 @@ func sha1File(path string) (string, error) {
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// dirSize returns the total size of the regular files under dir.
+func dirSize(dir string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type().IsRegular() {
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
+}
+
+// sha1Dir returns a hex-encoded sha1 over dir's tree: every entry's relative
+// path, plus file contents (or symlink targets), in lexical walk order. Any
+// added, removed, renamed or modified entry changes the result.
+func sha1Dir(dir string) (string, error) {
+	h := sha1.New()
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(h, "%s\x00%s\x00", d.Type().String(), filepath.ToSlash(rel))
+
+		switch {
+		case d.Type()&os.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(h, "%s\x00", target)
+		case d.Type().IsRegular():
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			if _, err := io.Copy(h, f); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// tarGzDir writes dir as a gzip'd tarball to dst, with entries rooted at
+// dir's base name (so extracting it recreates the directory), and returns
+// the size of dst. Only directories, regular files and symlinks are stored.
+func tarGzDir(dir, dst string) (int64, error) {
+	out, err := os.Create(dst)
+	if err != nil {
+		return 0, err
+	}
+	defer out.Close()
+
+	gw := gzip.NewWriter(out)
+	tw := tar.NewWriter(gw)
+	root := filepath.Base(dir)
+
+	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == dst {
+			return nil
+		}
+		mode := d.Type()
+		if !mode.IsDir() && !mode.IsRegular() && mode&os.ModeSymlink == 0 {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		var link string
+		if mode&os.ModeSymlink != 0 {
+			if link, err = os.Readlink(path); err != nil {
+				return err
+			}
+		}
+		hdr, err := tar.FileInfoHeader(info, link)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		hdr.Name = filepath.ToSlash(filepath.Join(root, rel))
+		if mode.IsDir() {
+			hdr.Name += "/"
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+
+		if mode.IsRegular() {
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			if _, err := io.Copy(tw, f); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		err = tw.Close()
+	}
+	if cerr := gw.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	info, err := out.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 func gzipFile(src, dst string) (int64, error) {

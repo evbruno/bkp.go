@@ -8,6 +8,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Version reporting now supports `bkp version` and `bkp --version`, printing build metadata (version/commit/date) plus runtime details in a bordered table.
+- `file` may now point at a directory: it is archived as
+  `<dir>.<ISO8601>.tar.gz` (or passed as-is with `compress: false`), and
+  `skip_unchanged` hashes the whole tree.
 
 ## [0.0.4] - 2026-07-09
 

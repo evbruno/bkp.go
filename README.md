@@ -95,7 +95,7 @@ Project fields:
 
 - `name`: unique project name
 - `base_dir`: working directory where source file lives
-- `file`: source filename (relative to `base_dir`)
+- `file`: source file or directory (relative to `base_dir`); globs like `*` are not supported — point at the directory instead
 - `command`: command to run for backup; `{{file}}` is replaced with artifact path
 - `compress`: gzip before command (default: `true`)
 - `timestamp`: timestamp suffix for gzip filename (default: `true`)
@@ -108,6 +108,18 @@ Project fields:
 - With `timestamp: true` (default), artifact looks like `my.db.20260708T193000Z.gz`.
 - With `timestamp: false`, artifact is `my.db.gz`.
 - With `compress: false`, `{{file}}` is just the original `file`.
+- If `file` is a directory, it is archived as `<dir>.<ISO8601>.tar.gz` (or `<dir>.tar.gz`)
+  instead; with `compress: false` the directory itself is passed. `skip_unchanged`
+  hashes the whole tree (paths + contents).
+
+Example, backing up everything inside `/data/exa/walle`:
+
+```yaml
+  - name: exa_3
+    base_dir: /data/exa
+    file: walle
+    command: rclone copy {{file}} oci:app-bkps/exa.3/
+```
 - If `command` does not contain `{{file}}`, it runs as-is.
 
 Commands run with `sh -c` in `base_dir`.
