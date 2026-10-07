@@ -663,3 +663,62 @@ func TestRun_DirectoryWithoutCompressPassesDirAsIs(t *testing.T) {
 		t.Errorf("{{file}} = %q, want %q", strings.TrimSpace(string(got)), "walle")
 	}
 }
+
+func TestRun_ProjectsRunInParallel(t *testing.T) {
+	dir := t.TempDir()
+	var projects []config.Project
+	for _, name := range []string{"a", "b", "c"} {
+		if err := os.WriteFile(filepath.Join(dir, name+".db"), []byte(name), 0o644); err != nil {
+			t.Fatalf("writing fixture: %v", err)
+		}
+		projects = append(projects, config.Project{Name: name, BaseDir: dir, File: name + ".db", Command: "sleep 1"})
+	}
+
+	cfg := &config.Config{Title: "test", Target: filepath.Join(dir, "orchestrator.sqlite3"), Projects: projects}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+	start := time.Now()
+	results := Run(cfg, st, Options{})
+	elapsed := time.Since(start)
+
+	if elapsed >= 2500*time.Millisecond {
+		t.Errorf("3 x 'sleep 1' took %s, want < 2.5s (projects should run concurrently)", elapsed)
+	}
+	for i, want := range []string{"a", "b", "c"} {
+		if results[i].Project != want || results[i].Status != "ok" {
+			t.Errorf("results[%d] = %s/%s (%s), want %s/ok in config order", i, results[i].Project, results[i].Status, results[i].Error, want)
+		}
+		if results[i].BaseDir != dir {
+			t.Errorf("results[%d].BaseDir = %q, want %q", i, results[i].BaseDir, dir)
+		}
+	}
+}
+
+func TestRun_ReportsProgress(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.db"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "app", BaseDir: dir, File: "app.db", Command: "true"},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	var msgs []string
+	st := newTestStore(t)
+	Run(cfg, st, Options{Progress: func(project, msg string) {
+		msgs = append(msgs, project+": "+msg)
+	}})
+
+	if len(msgs) < 2 || msgs[0] != "app: started" || !strings.HasPrefix(msgs[len(msgs)-1], "app: ok in ") {
+		t.Errorf("progress = %q, want 'app: started' ... 'app: ok in <duration>'", msgs)
+	}
+}

@@ -11,6 +11,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `file` may now point at a directory: it is archived as
   `<dir>.<ISO8601>.tar.gz` (or passed as-is with `compress: false`), and
   `skip_unchanged` hashes the whole tree.
+- Projects now run in parallel (self-backup still runs last), with live
+  per-step progress printed to stdout.
+- `BASE DIR` column in the backup summary, before `FILE`.
 
 ## [0.0.4] - 2026-07-09
 

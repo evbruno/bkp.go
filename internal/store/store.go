@@ -41,6 +41,9 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening store: %w", err)
 	}
+	// Projects run concurrently; a single connection serializes writes so
+	// SQLite never reports "database is locked".
+	db.SetMaxOpenConns(1)
 
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {

@@ -66,7 +66,13 @@ func runBackup(args []string) {
 	}
 	defer st.Close()
 
-	results := runner.Run(cfg, st, runner.Options{DryRun: *dryRun})
+	results := runner.Run(cfg, st, runner.Options{
+		DryRun: *dryRun,
+		Progress: func(project, msg string) {
+			fmt.Printf("%s [%s] %s\n", time.Now().Format("15:04:05"), project, msg)
+		},
+	})
+	fmt.Println()
 
 	if printSummary(cfg.Title, results) {
 		os.Exit(1)
@@ -207,7 +213,7 @@ func printSummary(title string, results []runner.Result) bool {
 	fmt.Printf("Backup summary: %s\n", title)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "PROJECT\tFILE\tSHA1\tSTATUS\tDURATION\tERROR")
+	fmt.Fprintln(w, "PROJECT\tBASE DIR\tFILE\tSHA1\tSTATUS\tDURATION\tERROR")
 
 	failed := false
 	for _, r := range results {
@@ -220,8 +226,9 @@ func printSummary(title string, results []runner.Result) bool {
 			sha1 = "-"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.Project,
+			r.BaseDir,
 			r.FileName,
 			sha1,
 			r.Status,

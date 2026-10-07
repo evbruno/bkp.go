@@ -126,9 +126,20 @@ Commands run with `sh -c` in `base_dir`.
 
 ## Output and status
 
-Main run output includes project-level summary columns:
+Projects run in parallel; the orchestrator self-backup runs last, once they
+have all finished. While running, bkp prints one progress line per step:
+
+```text
+15:02:02 [app] started
+15:02:02 [app] compressing to app.db.20261007T180202Z.gz
+15:02:02 [app] running command
+15:02:03 [app] ok in 1.035s
+```
+
+Then it prints a summary table (in config order) with these columns:
 
 - `PROJECT`
+- `BASE DIR`
 - `FILE`
 - `SHA1`
 - `STATUS`

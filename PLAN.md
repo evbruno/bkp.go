@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS backup_log (
 1. Parse flags: `--config <path.yaml>` (required), `--dry-run` (optional).
 2. Load + validate YAML.
 3. Open/create the orchestrator SQLite DB at `target`; ensure `backup_log` exists.
-4. For each project (sequentially):
+4. For each project (in parallel):
    a. Resolve source path = `base_dir/file`; stat for `file_size`; sha1 the file contents.
    b. If `skip_unchanged` and the sha1 matches the project's last `ok` row: insert a
       `skipped` row and move on — no compression, no command.
@@ -150,7 +150,6 @@ bkp.go/
   table); InsertLog round-trips; `LatestOKSHA1` / `LatestPerProject` queries.
 
 ## Open / future
-- Concurrency across projects (currently sequential).
 - Retention/pruning of old artifacts.
 - Retries on command failure.
 ```

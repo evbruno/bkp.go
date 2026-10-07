@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/evbruno/bkp.go/internal/config"
@@ -21,6 +22,7 @@ import (
 // Result is the outcome of a single project (or the orchestrator self-backup).
 type Result struct {
 	Project  string
+	BaseDir  string // directory the source file lives in (the target's dir, for the orchestrator)
 	FileName string // base name of the source file, e.g. "production1.sqlite3"
 	SHA1     string // sha1 of the uncompressed source file; empty if never computed (dry-run, stat failure, orchestrator)
 	Status   string // "ok" | "error" | "dry-run" | "skipped"
@@ -31,23 +33,67 @@ type Result struct {
 // Options controls a single Run invocation.
 type Options struct {
 	DryRun bool
+	// Progress, if set, is called as each project moves through its steps.
+	// Projects run concurrently, so it may be called from several goroutines
+	// at once; calls are serialized by Run.
+	Progress func(project, msg string)
 }
 
-// Run executes every project sequentially, then the self-backup if enabled.
-// A failing project does not stop the run; the returned slice always has one
-// entry per project (plus one for the orchestrator, if backup_self is set).
+// Run executes every project concurrently, then the self-backup if enabled
+// (after all projects, so the orchestrator DB holds this run's rows). A
+// failing project does not stop the run; the returned slice always has one
+// entry per project, in config order (plus one for the orchestrator, if
+// backup_self is set).
 func Run(cfg *config.Config, st *store.Store, opts Options) []Result {
-	results := make([]Result, 0, len(cfg.Projects)+1)
-
-	for _, p := range cfg.Projects {
-		results = append(results, runProject(p, st, opts))
+	if opts.Progress != nil {
+		var mu sync.Mutex
+		progress := opts.Progress
+		opts.Progress = func(project, msg string) {
+			mu.Lock()
+			defer mu.Unlock()
+			progress(project, msg)
+		}
 	}
 
+	results := make([]Result, len(cfg.Projects))
+
+	var wg sync.WaitGroup
+	for i, p := range cfg.Projects {
+		wg.Add(1)
+		go func(i int, p config.Project) {
+			defer wg.Done()
+			opts.report(p.Name, "started")
+			r := runProject(p, st, opts)
+			r.BaseDir = p.BaseDir
+			opts.reportDone(r)
+			results[i] = r
+		}(i, p)
+	}
+	wg.Wait()
+
 	if cfg.BackupSelfEnabled() {
-		results = append(results, runSelf(cfg, st, opts))
+		opts.report("orchestrator", "started")
+		r := runSelf(cfg, st, opts)
+		r.BaseDir = filepath.Dir(cfg.Target)
+		opts.reportDone(r)
+		results = append(results, r)
 	}
 
 	return results
+}
+
+func (o Options) report(project, format string, args ...any) {
+	if o.Progress != nil {
+		o.Progress(project, fmt.Sprintf(format, args...))
+	}
+}
+
+func (o Options) reportDone(r Result) {
+	if r.Error != "" {
+		o.report(r.Project, "%s in %s: %s", r.Status, r.Duration.Round(time.Millisecond), r.Error)
+		return
+	}
+	o.report(r.Project, "%s in %s", r.Status, r.Duration.Round(time.Millisecond))
 }
 
 func runProject(p config.Project, st *store.Store, opts Options) Result {
@@ -86,6 +132,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 		return Result{Project: p.Name, FileName: p.File, Status: "dry-run", Duration: time.Since(start)}
 	}
 
+	opts.report(p.Name, "hashing %s", p.File)
 	var sha1sum string
 	if isDir {
 		sha1sum, err = sha1Dir(sourcePath)
@@ -134,6 +181,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 		}
 		gzPath = filepath.Join(p.BaseDir, gzName)
 
+		opts.report(p.Name, "compressing to %s", gzName)
 		var size int64
 		if isDir {
 			size, err = tarGzDir(sourcePath, gzPath)
@@ -148,6 +196,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 	}
 
 	cmd := substitute(p.Command, artifact)
+	opts.report(p.Name, "running command")
 	if err := runShell(cmd, p.BaseDir); err != nil {
 		return fail(fmt.Errorf("command failed: %w", err), fileSize, compressedSize, sha1sum)
 	}
@@ -202,6 +251,7 @@ func runSelf(cfg *config.Config, st *store.Store, opts Options) Result {
 	}
 
 	targetDir := filepath.Dir(cfg.Target)
+	opts.report(project, "running self_command")
 	if err := runShell(cfg.SelfCommand, targetDir); err != nil {
 		return Result{Project: project, FileName: fileName, Status: "error", Error: err.Error(), Duration: time.Since(start)}
 	}
