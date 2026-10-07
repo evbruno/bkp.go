@@ -5,6 +5,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-10-07
+
 ### Added
 
 - `bkp update`: replaces the `bkp` on `$PATH` with the latest GitHub release
@@ -12,6 +14,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   binary at `/tmp/bkp.bkp`.
 - Each backup run first prints which config file it uses (absolute path)
   and where that came from: the `-config` flag, `BKP_CONFIG`, or the default.
+- `bkp version` shows the GitHub repo URL.
 
 ### Fixed
 
