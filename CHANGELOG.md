@@ -5,8 +5,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-10-07
+
 ### Added
 
+- `-config` is optional: falls back to `BKP_CONFIG`, then
+  `$HOME/.config/bkp/bkp.yaml`. `target` is optional too: falls back to
+  `BKP_TARGET`, then `$HOME/.local/state/bkp/bkp.sqlite3`.
 - Version reporting now supports `bkp version` and `bkp --version`, printing build metadata (version/commit/date) plus runtime details in a bordered table.
 - `file` may now point at a directory: it is archived as
   `<dir>.<ISO8601>.tar.gz` (or passed as-is with `compress: false`), and
