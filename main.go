@@ -109,6 +109,7 @@ func printVersionReport() {
 
 	rows := [][2]string{
 		{"bkp", version},
+		{"repo", selfupdate.DefaultRepoURL},
 		{"commit", commit},
 		{"date", date},
 		{"os/version", osVersion()},
