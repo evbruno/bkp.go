@@ -1,5 +1,8 @@
 # bkp.go
 
+[![Release](https://img.shields.io/github/v/release/evbruno/bkp.go?logo=github&sort=semver)](https://github.com/evbruno/bkp.go/releases/latest)
+[![CI](https://github.com/evbruno/bkp.go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/evbruno/bkp.go/actions/workflows/ci.yml)
+
 bkp is a small CLI to back up files using commands you already use (for example `rclone copy`, `cp`, or custom shell commands), while tracking every run in a SQLite log.
 
 You define projects in one YAML file. For each project, bkp can:
