@@ -5,6 +5,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `bkp update`: replaces the `bkp` on `$PATH` with the latest GitHub release
+  (checksum-verified, same path and permissions), keeping the previous
+  binary at `/tmp/bkp.bkp`.
+
 ## [0.0.6] - 2026-10-07
 
 ### Added

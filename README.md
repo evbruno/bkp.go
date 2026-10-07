@@ -22,6 +22,12 @@ sudo mv bkp-linux-amd64 /usr/local/bin/bkp
 
 Swap `amd64` for `arm64` on ARM hosts.
 
+To upgrade later, run `bkp update`. It finds `bkp` on your `$PATH`, downloads
+the latest release for your platform (verified against `checksums.txt`), and
+replaces it in place with the same permissions. The previous binary is kept at
+`/tmp/bkp.bkp`. Use `sudo bkp update` if it lives in a root-owned directory,
+and `bkp update -force` to reinstall the current version.
+
 ## Quick start
 
 1. Create a config file at `$HOME/.config/bkp/bkp.yaml`:

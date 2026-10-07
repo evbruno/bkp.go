@@ -14,6 +14,7 @@ import (
 
 	"github.com/evbruno/bkp.go/internal/config"
 	"github.com/evbruno/bkp.go/internal/runner"
+	"github.com/evbruno/bkp.go/internal/selfupdate"
 	"github.com/evbruno/bkp.go/internal/store"
 )
 
@@ -30,6 +31,11 @@ func main() {
 
 	if len(os.Args) > 1 && os.Args[1] == "status" {
 		runStatus(os.Args[2:])
+		return
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "update" {
+		runUpdate(os.Args[2:])
 		return
 	}
 	runBackup(os.Args[1:])
@@ -172,6 +178,46 @@ func osKernelArch() string {
 		return strings.TrimSpace(string(out))
 	}
 	return runtime.GOARCH
+}
+
+// runUpdate replaces the bkp found on $PATH with the latest GitHub release
+// build for this platform, keeping the previous binary at /tmp/bkp.bkp.
+func runUpdate(args []string) {
+	fs := flag.NewFlagSet("bkp update", flag.ExitOnError)
+	force := fs.Bool("force", false, "reinstall even if already on the latest version")
+	fs.Parse(args)
+
+	fail := func(err error) {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	target, err := exec.LookPath("bkp")
+	if err != nil {
+		fail(fmt.Errorf("finding bkp on $PATH: %w", err))
+	}
+
+	u := &selfupdate.Updater{RepoURL: selfupdate.DefaultRepoURL, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
+	tag, err := u.LatestTag()
+	if err != nil {
+		fail(err)
+	}
+
+	if tag == version && !*force {
+		fmt.Printf("bkp %s is already the latest version (%s)\n", version, target)
+		return
+	}
+
+	fmt.Printf("downloading bkp %s (%s)...\n", tag, u.AssetName())
+	bin, err := u.Download(tag)
+	if err != nil {
+		fail(err)
+	}
+
+	if err := selfupdate.Replace(target, bin, selfupdate.DefaultBackupPath); err != nil {
+		fail(err)
+	}
+	fmt.Printf("updated %s: %s -> %s (previous binary saved to %s)\n", target, version, tag, selfupdate.DefaultBackupPath)
 }
 
 // runStatus is read-only: it never runs a project's command or writes a
