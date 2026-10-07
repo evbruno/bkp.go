@@ -24,6 +24,7 @@ type Result struct {
 	Project  string
 	BaseDir  string // directory the source file lives in (the target's dir, for the orchestrator)
 	FileName string // base name of the source file, e.g. "production1.sqlite3"
+	Artifact string // what {{file}} expanded to in command (e.g. "production1.sqlite3.20260708T193000Z.gz"); empty if command never ran
 	SHA1     string // sha1 of the uncompressed source file; empty if never computed (dry-run, stat failure, orchestrator)
 	Status   string // "ok" | "error" | "dry-run" | "skipped"
 	Error    string
@@ -99,6 +100,7 @@ func (o Options) reportDone(r Result) {
 func runProject(p config.Project, st *store.Store, opts Options) Result {
 	start := time.Now()
 	sourcePath := filepath.Join(p.BaseDir, p.File)
+	var sent string // set once command is about to run
 
 	fail := func(err error, fileSize int64, compressedSize *int64, sha1sum string) Result {
 		duration := time.Since(start)
@@ -113,7 +115,7 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 			DurationMs:     duration.Milliseconds(),
 			SHA1:           sha1sum,
 		})
-		return Result{Project: p.Name, FileName: p.File, SHA1: sha1sum, Status: "error", Error: err.Error(), Duration: duration}
+		return Result{Project: p.Name, FileName: p.File, Artifact: sent, SHA1: sha1sum, Status: "error", Error: err.Error(), Duration: duration}
 	}
 
 	info, err := os.Stat(sourcePath)
@@ -195,8 +197,9 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 		artifact = gzName
 	}
 
+	sent = artifact
 	cmd := substitute(p.Command, artifact)
-	opts.report(p.Name, "running command")
+	opts.report(p.Name, "running command with %s", artifact)
 	if err := runShell(cmd, p.BaseDir); err != nil {
 		return fail(fmt.Errorf("command failed: %w", err), fileSize, compressedSize, sha1sum)
 	}
@@ -218,10 +221,10 @@ func runProject(p config.Project, st *store.Store, opts Options) Result {
 		DurationMs:     duration.Milliseconds(),
 		SHA1:           sha1sum,
 	}); err != nil {
-		return Result{Project: p.Name, FileName: p.File, SHA1: sha1sum, Status: "error", Error: err.Error(), Duration: duration}
+		return Result{Project: p.Name, FileName: p.File, Artifact: sent, SHA1: sha1sum, Status: "error", Error: err.Error(), Duration: duration}
 	}
 
-	return Result{Project: p.Name, FileName: p.File, SHA1: sha1sum, Status: "ok", Duration: duration}
+	return Result{Project: p.Name, FileName: p.File, Artifact: sent, SHA1: sha1sum, Status: "ok", Duration: duration}
 }
 
 func runSelf(cfg *config.Config, st *store.Store, opts Options) Result {

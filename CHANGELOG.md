@@ -5,6 +5,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `SENT` column in the backup summary: what `{{file}}` expanded to.
+
 ## [0.0.5] - 2026-10-07
 
 ### Added

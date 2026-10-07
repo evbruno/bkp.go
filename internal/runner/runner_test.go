@@ -722,3 +722,32 @@ func TestRun_ReportsProgress(t *testing.T) {
 		t.Errorf("progress = %q, want 'app: started' ... 'app: ok in <duration>'", msgs)
 	}
 }
+
+func TestRun_ResultIncludesSentArtifact(t *testing.T) {
+	dir := t.TempDir()
+	writeTree(t, dir, map[string]string{"app.db": "data", "raw.db": "raw", "walle/a.txt": "alpha"})
+
+	timestampOff := false
+	compressOff := false
+	cfg := &config.Config{
+		Title:  "test",
+		Target: filepath.Join(dir, "orchestrator.sqlite3"),
+		Projects: []config.Project{
+			{Name: "gz", BaseDir: dir, File: "app.db", Command: "true", Timestamp: &timestampOff},
+			{Name: "tgz", BaseDir: dir, File: "walle", Command: "true", Timestamp: &timestampOff},
+			{Name: "raw", BaseDir: dir, File: "raw.db", Command: "true", Compress: &compressOff},
+			{Name: "missing", BaseDir: dir, File: "nope.db", Command: "true"},
+		},
+	}
+	backupSelf := false
+	cfg.BackupSelf = &backupSelf
+
+	st := newTestStore(t)
+	results := Run(cfg, st, Options{})
+
+	for i, want := range []string{"app.db.gz", "walle.tar.gz", "raw.db", ""} {
+		if results[i].Artifact != want {
+			t.Errorf("%s: Artifact = %q, want %q", results[i].Project, results[i].Artifact, want)
+		}
+	}
+}

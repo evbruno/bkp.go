@@ -213,7 +213,7 @@ func printSummary(title string, results []runner.Result) bool {
 	fmt.Printf("Backup summary: %s\n", title)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "PROJECT\tBASE DIR\tFILE\tSHA1\tSTATUS\tDURATION\tERROR")
+	fmt.Fprintln(w, "PROJECT\tBASE DIR\tFILE\tSENT\tSHA1\tSTATUS\tDURATION\tERROR")
 
 	failed := false
 	for _, r := range results {
@@ -225,11 +225,16 @@ func printSummary(title string, results []runner.Result) bool {
 		if sha1 == "" {
 			sha1 = "-"
 		}
+		sent := r.Artifact
+		if sent == "" {
+			sent = "-"
+		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.Project,
 			r.BaseDir,
 			r.FileName,
+			sent,
 			sha1,
 			r.Status,
 			r.Duration.Round(time.Millisecond),

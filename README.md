@@ -141,6 +141,7 @@ Then it prints a summary table (in config order) with these columns:
 - `PROJECT`
 - `BASE DIR`
 - `FILE`
+- `SENT` (what `{{file}}` expanded to, i.e. the artifact handed to `command`)
 - `SHA1`
 - `STATUS`
 - `DURATION`
