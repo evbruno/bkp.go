@@ -238,9 +238,12 @@ projects:
 func TestResolveConfigPath_CLIWins(t *testing.T) {
 	t.Setenv("BKP_CONFIG", "/tmp/from-env.yaml")
 
-	got, err := ResolveConfigPath("~/from-cli.yaml")
+	got, source, err := ResolveConfigPath("~/from-cli.yaml")
 	if err != nil {
 		t.Fatalf("ResolveConfigPath returned error: %v", err)
+	}
+	if source != SourceFlag {
+		t.Errorf("source = %q, want %q", source, SourceFlag)
 	}
 
 	home, err := os.UserHomeDir()
@@ -256,9 +259,12 @@ func TestResolveConfigPath_CLIWins(t *testing.T) {
 func TestResolveConfigPath_EnvWinsWhenCLIMissing(t *testing.T) {
 	t.Setenv("BKP_CONFIG", "$HOME/from-env.yaml")
 
-	got, err := ResolveConfigPath("")
+	got, source, err := ResolveConfigPath("")
 	if err != nil {
 		t.Fatalf("ResolveConfigPath returned error: %v", err)
+	}
+	if source != SourceEnv {
+		t.Errorf("source = %q, want %q", source, SourceEnv)
 	}
 
 	home, err := os.UserHomeDir()
@@ -274,9 +280,12 @@ func TestResolveConfigPath_EnvWinsWhenCLIMissing(t *testing.T) {
 func TestResolveConfigPath_DefaultWhenUnset(t *testing.T) {
 	t.Setenv("BKP_CONFIG", "")
 
-	got, err := ResolveConfigPath("  ")
+	got, source, err := ResolveConfigPath("  ")
 	if err != nil {
 		t.Fatalf("ResolveConfigPath returned error: %v", err)
+	}
+	if source != SourceDefault {
+		t.Errorf("source = %q, want %q", source, SourceDefault)
 	}
 
 	want, err := DefaultConfigPath()
@@ -314,5 +323,20 @@ func TestDefaultPaths(t *testing.T) {
 	}
 	if filepath.Base(targetPath) != "bkp.sqlite3" {
 		t.Fatalf("DefaultTargetPath base = %q, want bkp.sqlite3", filepath.Base(targetPath))
+	}
+}
+
+func TestResolveConfigPath_RelativeBecomesAbsolute(t *testing.T) {
+	got, _, err := ResolveConfigPath("conf/bkp.yaml")
+	if err != nil {
+		t.Fatalf("ResolveConfigPath returned error: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(wd, "conf", "bkp.yaml"); got != want {
+		t.Fatalf("ResolveConfigPath = %q, want %q", got, want)
 	}
 }

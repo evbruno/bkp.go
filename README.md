@@ -81,6 +81,12 @@ If you do not pass `--config`, bkp resolves config in this order:
 1. `BKP_CONFIG`
 2. `$HOME/.config/bkp/bkp.yaml`
 
+Each run starts by printing the config it picked and why:
+
+```text
+config: /home/ubuntu/.config/bkp/bkp.yaml (from default)
+```
+
 ### `target` (orchestrator database) resolution
 
 Inside the YAML file, `target` is optional. When missing, bkp resolves it in this order:

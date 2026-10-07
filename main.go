@@ -46,18 +46,30 @@ func runBackup(args []string) {
 	configPath := fs.String("config", "", "path to backup spec YAML (optional: defaults to BKP_CONFIG or $HOME/.config/bkp/bkp.yaml)")
 	dryRun := fs.Bool("dry-run", false, "validate config and report what would run, without executing anything")
 	showVersion := fs.Bool("version", false, "print version and exit")
-	fs.Parse(args)
+	fs.Usage = func() {
+		out := fs.Output()
+		fmt.Fprint(out, `Usage: bkp [flags]          run every project's backup
+       bkp status [flags]   show the latest logged run per project
+       bkp update [-force]  replace bkp on $PATH with the latest release
+       bkp version          print version and build details
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+	parseArgs(fs, args)
 
 	if *showVersion {
 		printVersionReport()
 		return
 	}
 
-	resolvedConfigPath, err := config.ResolveConfigPath(*configPath)
+	resolvedConfigPath, configSource, err := config.ResolveConfigPath(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("config: %s (from %s)\n", resolvedConfigPath, configSource)
 
 	cfg, err := config.Load(resolvedConfigPath)
 	if err != nil {
@@ -181,12 +193,24 @@ func osKernelArch() string {
 	return runtime.GOARCH
 }
 
+// parseArgs parses flags and rejects leftover positional arguments, so a
+// mistyped subcommand (e.g. "bkp self-update") fails instead of silently
+// falling through to a backup run.
+func parseArgs(fs *flag.FlagSet, args []string) {
+	fs.Parse(args)
+	if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "error: unknown command or argument %q\n", fs.Arg(0))
+		fs.Usage()
+		os.Exit(2)
+	}
+}
+
 // runUpdate replaces the bkp found on $PATH with the latest GitHub release
 // build for this platform, keeping the previous binary at /tmp/bkp.bkp.
 func runUpdate(args []string) {
 	fs := flag.NewFlagSet("bkp update", flag.ExitOnError)
 	force := fs.Bool("force", false, "reinstall even if already on the latest version")
-	fs.Parse(args)
+	parseArgs(fs, args)
 
 	fail := func(err error) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -226,9 +250,9 @@ func runUpdate(args []string) {
 func runStatus(args []string) {
 	fs := flag.NewFlagSet("bkp status", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to backup spec YAML (optional: defaults to BKP_CONFIG or $HOME/.config/bkp/bkp.yaml)")
-	fs.Parse(args)
+	parseArgs(fs, args)
 
-	resolvedConfigPath, err := config.ResolveConfigPath(*configPath)
+	resolvedConfigPath, _, err := config.ResolveConfigPath(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

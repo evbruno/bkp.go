@@ -77,18 +77,33 @@ type Config struct {
 	Projects    []Project `yaml:"projects"`
 }
 
-// ResolveConfigPath returns the config path by precedence:
-// CLI flag > BKP_CONFIG env var > default ($HOME/.config/bkp/bkp.yaml).
-func ResolveConfigPath(cliPath string) (string, error) {
-	if strings.TrimSpace(cliPath) != "" {
-		return expandPath(cliPath), nil
+// Where a resolved config path came from, as returned by ResolveConfigPath.
+const (
+	SourceFlag    = "-config flag"
+	SourceEnv     = "BKP_CONFIG env var"
+	SourceDefault = "default"
+)
+
+// ResolveConfigPath returns the absolute config path, and which of these it
+// came from, by precedence: CLI flag > BKP_CONFIG env var > default
+// ($HOME/.config/bkp/bkp.yaml).
+func ResolveConfigPath(cliPath string) (path, source string, err error) {
+	switch {
+	case strings.TrimSpace(cliPath) != "":
+		path, source = expandPath(cliPath), SourceFlag
+	case strings.TrimSpace(os.Getenv("BKP_CONFIG")) != "":
+		path, source = expandPath(os.Getenv("BKP_CONFIG")), SourceEnv
+	default:
+		if path, err = DefaultConfigPath(); err != nil {
+			return "", "", err
+		}
+		source = SourceDefault
 	}
 
-	if p, ok := os.LookupEnv("BKP_CONFIG"); ok && strings.TrimSpace(p) != "" {
-		return expandPath(p), nil
+	if path, err = filepath.Abs(path); err != nil {
+		return "", "", fmt.Errorf("resolving config path: %w", err)
 	}
-
-	return DefaultConfigPath()
+	return path, source, nil
 }
 
 // DefaultConfigPath returns the default config location.

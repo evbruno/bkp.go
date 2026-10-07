@@ -10,6 +10,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `bkp update`: replaces the `bkp` on `$PATH` with the latest GitHub release
   (checksum-verified, same path and permissions), keeping the previous
   binary at `/tmp/bkp.bkp`.
+- Each backup run first prints which config file it uses (absolute path)
+  and where that came from: the `-config` flag, `BKP_CONFIG`, or the default.
+
+### Fixed
+
+- An unknown command or extra argument (e.g. `bkp self-update`) is now an
+  error instead of silently running a backup.
 
 ## [0.0.6] - 2026-10-07
 
