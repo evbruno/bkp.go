@@ -182,3 +182,36 @@ Requires Go 1.26+.
 make build
 make test
 ```
+
+## Roadmap
+
+Ideas we'd like to add. Nothing here is implemented yet.
+
+**Setup**
+
+- [ ] `bkp new`: interactive prompts for a project's `name`, `base_dir`,
+  `file` and `command`, then creates the default `bkp.yaml` or appends to
+  it. Validates the entry before saving.
+- [ ] `bkp schedule`: install a cron entry or systemd timer that runs `bkp`
+  on a schedule.
+
+**Running backups**
+
+- [ ] `-project <name>`: run only the selected project(s).
+- [ ] `-jobs <n>`: limit how many projects run in parallel.
+- [ ] `pre_command` / `post_command`: per-project hooks, e.g. take a
+  consistent snapshot with `sqlite3 app.db ".backup snap.db"` before copying.
+- [ ] `timeout`: kill a project's command if it runs too long.
+- [ ] `retries`: retry a failed command, with backoff.
+- [ ] `exclude` patterns for directory backups (e.g. `*.log`, `cache/`).
+
+**Results**
+
+- [ ] Notifications on failure (webhook, Slack, or a healthchecks.io-style
+  ping), so a broken nightly backup doesn't go unnoticed.
+- [ ] `bkp history <project>`: list past runs from the log, not just the
+  latest.
+- [ ] Retention: prune old rows from the SQLite log, and old artifacts kept
+  with `keep_compressed: true`.
+- [ ] `restore_command`: an optional per-project command to fetch and
+  unpack the latest backup.
